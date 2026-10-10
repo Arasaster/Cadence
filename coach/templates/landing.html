@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <h1>Know exactly what to post on X today.</h1>
+    <p class="lead">{{ APP_NAME }} hands you a daily checklist: the posts to publish, the best times, and who to reply to. You post. It plans, writes, and reminds you by email.</p>
+    <p class="cta-row">
+      <a class="btn primary lg" href="{% url 'signup' %}">Create your free account</a>
+      <a class="btn lg" href="{% url 'login' %}">Log in</a>
+    </p>
+    <ul class="ticks">
+      <li>Posts written in your voice, ready to copy</li>
+      <li>Reply guidance for every session, never copy-paste spam</li>
+      <li>Nothing connects to your X account, so it stays safe</li>
+    </ul>
+  </div>
+  <div class="hero-demo" aria-hidden="true">
+    <div class="panel">
+      <p class="panel-title">Your tasks today</p>
+      <ul class="rows demo">
+        <li class="row sel"><span class="dot k-post">P</span><span class="r-main"><b>Post your strongest opinion</b><small>09:00 · Post</small></span><span class="pill">To do</span></li>
+        <li class="row"><span class="dot k-reply">R</span><span class="r-main"><b>Morning reply session</b><small>10:00 · 6 replies</small></span><span class="pill">To do</span></li>
+        <li class="row"><span class="dot k-other">E</span><span class="r-main"><b>Engage with 5 people</b><small>12:00 · Engage</small></span><span class="pill ok">Done</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+{% endblock %}

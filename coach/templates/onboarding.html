@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Settings{% else %}Set up{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if editing %}Settings{% else %}Tell us about you{% endif %}</h1>
+    <p class="muted">{% if editing %}Changes apply from your next plan.{% else %}Your answers shape every post and task. It takes about two minutes.{% endif %}</p>
+  </div>
+</div>
+<form method="post" class="form-grid">{% csrf_token %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  <section class="card">
+    <h2>About you</h2>
+    {% include "_field.html" with field=form.x_username %}
+    {% include "_field.html" with field=form.niche %}
+    {% include "_field.html" with field=form.audience %}
+    {% include "_field.html" with field=form.goal %}
+    {% include "_field.html" with field=form.offer %}
+  </section>
+  <section class="card">
+    <h2>Your voice</h2>
+    {% include "_field.html" with field=form.tone %}
+    {% include "_field.html" with field=form.admired %}
+    {% include "_field.html" with field=form.voice_samples %}
+  </section>
+  <section class="card span2">
+    <h2>Your routine</h2>
+    <div class="grid3">
+      {% include "_field.html" with field=form.posts_per_day %}
+      {% include "_field.html" with field=form.reply_target %}
+      {% include "_field.html" with field=form.daily_minutes %}
+    </div>
+    <div class="grid2">
+      {% include "_field.html" with field=form.timezone %}
+      {% include "_field.html" with field=form.email_reminders %}
+    </div>
+  </section>
+  <div class="span2"><button class="btn primary lg" type="submit">{% if editing %}Save settings{% else %}Save and see today's plan{% endif %}</button></div>
+</form>
+{% endblock %}

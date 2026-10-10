@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Insights{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Insights</h1>
+    <p class="muted">Upload your own X data archive. It stays in your account and tunes your daily plan.</p>
+  </div>
+</div>
+<section class="card">
+  <details class="how">
+    <summary>How do I get my archive?</summary>
+    <ol>
+      <li>On X, open Settings, then Your account, then Download an archive of your data.</li>
+      <li>Wait for the email, download the zip, and unzip it.</li>
+      <li>Open the <b>data</b> folder and upload <b>tweets.js</b> here.</li>
+    </ol>
+  </details>
+  <form method="post" enctype="multipart/form-data" class="form">{% csrf_token %}
+    {% include "_field.html" with field=form.file %}
+    <div><button class="btn primary" type="submit">Analyse my archive</button></div>
+  </form>
+</section>
+
+{% if stats %}
+<section class="stat-row">
+  <div class="card stat"><span class="k">Original posts</span><b class="v">{{ stats.total_posts }}</b></div>
+  <div class="card stat"><span class="k">Replies</span><b class="v">{{ stats.total_replies }}</b></div>
+  <div class="card stat"><span class="k">First post</span><b class="v">{{ stats.first_post }}</b></div>
+  <div class="card stat"><span class="k">Best hours</span><b class="v sm">{{ stats.best_hours|join:", "|default:"Not enough data" }}</b></div>
+</section>
+
+<section class="card">
+  <h2>Posts per month</h2>
+  <div class="bars">
+    {% for m in stats.per_month %}
+      <div class="barcol" title="{{ m.month }}: {{ m.count }}"><i style="height: {{ m.pct }}%"></i><span>{{ m.month|slice:"5:" }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="two-col">
+  <div class="card">
+    <h2>Your circle</h2>
+    <p class="muted">People you reply to and mention most.</p>
+    <ul class="people">
+      {% for c in stats.circle %}
+        <li><span class="dot a{% cycle '1' '2' '3' '4' %}">{{ c.name|slice:":1"|upper }}</span><b>@{{ c.name }}</b><span class="muted">{{ c.count }} interaction{{ c.count|pluralize }}</span></li>
+      {% empty %}<li class="muted">Nothing yet.</li>{% endfor %}
+    </ul>
+  </div>
+  <div class="panel">
+    <p class="panel-title">Your best posts</p>
+    {% for p in stats.top_posts %}
+      <blockquote class="draft">{{ p.text|linebreaksbr }}<span class="meta">{{ p.likes }} likes · {{ p.rts }} reposts · {{ p.date }}</span></blockquote>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

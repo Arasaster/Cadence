@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% load coach_extras %}
+{% block title %}Today{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Today</h1>
+    <p class="muted">{{ now|date:"l, j F" }}</p>
+  </div>
+  <form method="post" action="{% url 'generate' %}">{% csrf_token %}
+    <button class="btn" type="submit">{% if plan %}Regenerate plan{% else %}Generate today's plan{% endif %}</button>
+  </form>
+</div>
+
+{% if plan %}
+<section class="top-grid">
+  <div class="card stats">
+    <div class="metrics">
+      <div><span class="k">Done</span><b class="v"><span id="doneN">{{ done }}</span><small>/<span id="totalN">{{ total }}</span></small></b></div>
+      <div><span class="k">Replies planned</span><b class="v">{{ reply_total }}</b></div>
+      <div><span class="k">Posts today</span><b class="v">{{ post_total }}</b></div>
+    </div>
+    <div class="segs" aria-hidden="true">{% for t in tasks %}<i class="seg{% if t.done %} on{% endif %}" data-seg="{{ t.pk }}"></i>{% endfor %}</div>
+    {% if plan.summary %}<p class="summary">{{ plan.summary }}</p>{% endif %}
+  </div>
+  <div class="card nextup">
+    {% if next_task %}
+      <span class="k">Next up</span>
+      <b class="v big">{{ next_task.time|time:"H:i" }}</b>
+      <p class="nu-title">{{ next_task.title }}</p>
+      <button type="button" class="btn primary" data-open="{{ next_task.pk }}">Open task</button>
+    {% else %}
+      <span class="k">Next up</span>
+      <b class="v big">All done</b>
+      <p class="nu-title">You finished today's plan. See you tomorrow.</p>
+    {% endif %}
+  </div>
+</section>
+
+<div class="tabs" role="tablist" aria-label="Filter tasks">
+  <button type="button" class="tab on" role="tab" data-filter="all">All <span>{{ counts.all }}</span></button>
+  <button type="button" class="tab" role="tab" data-filter="post">Posts <span>{{ counts.post }}</span></button>
+  <button type="button" class="tab" role="tab" data-filter="reply">Replies <span>{{ counts.reply }}</span></button>
+  <button type="button" class="tab" role="tab" data-filter="other">Other <span>{{ counts.other }}</span></button>
+</div>
+
+<section class="panel work" data-first="{{ first_id }}">
+  <div class="list">
+    <p class="panel-title">Your tasks</p>
+    <ul class="rows">
+      {% for t in tasks %}
+      <li class="row{% if t.done %} is-done{% endif %}" data-id="{{ t.pk }}" data-group="{{ t.kind|group }}">
+        <button type="button" class="row-hit" data-select="{{ t.pk }}" aria-label="Open {{ t.title }}">
+          <span class="dot k-{{ t.kind|group }}">{{ t.kind|letter }}</span>
+          <span class="r-main"><b>{{ t.title }}</b><small>{{ t.time|time:"H:i" }} · {{ t.get_kind_display }}{% if t.count and t.kind == "reply_session" %} · {{ t.count }} replies{% endif %}</small></span>
+        </button>
+        <button type="button" class="tick" data-toggle="{{ t.pk }}" data-url="{% url 'toggle_task' t.pk %}" aria-pressed="{% if t.done %}true{% else %}false{% endif %}" aria-label="Mark done: {{ t.title }}"></button>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="detail">
+    {% for t in tasks %}
+    <article class="pane" data-pane="{{ t.pk }}" hidden>
+      <div class="pane-head">
+        <div>
+          <span class="k">Task details</span>
+          <h2>{{ t.title }}</h2>
+        </div>
+        <span class="pill status{% if t.done %} ok{% endif %}" data-status="{{ t.pk }}">{% if t.done %}Done{% else %}To do{% endif %}</span>
+      </div>
+      <div class="tiles">
+        <div class="tile"><b>{{ t.time|time:"H:i" }}</b><span>Time</span></div>
+        <div class="tile"><b>{{ t.get_kind_display }}</b><span>Type</span></div>
+        <div class="tile"><b>{% if t.count %}{{ t.count }}{% else %}1{% endif %}</b><span>{% if t.kind == "reply_session" %}Target{% else %}Action{% endif %}</span></div>
+      </div>
+      <div class="pane-body">
+        {% if t.kind == "post" or t.kind == "thread" %}
+          {% for b in t.body|blocks %}
+            <blockquote class="draft">{{ b|linebreaksbr }}</blockquote>
+            <div class="actions">
+              <button type="button" class="btn sm copy" data-text="{{ b }}">Copy</button>
+              <a class="btn sm" target="_blank" rel="noopener" href="{{ b|intent_url }}">Open in X</a>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="body">{{ t.body|linebreaksbr }}</p>
+          {% if t.kind == "reply_session" %}<p><a class="btn sm" href="{% url 'replies' %}">Open reply helper</a></p>{% endif %}
+        {% endif %}
+        {% if t.why %}<p class="why">{{ t.why }}</p>{% endif %}
+      </div>
+      <div class="pane-foot">
+        <span class="muted">Scheduled for {{ t.time|time:"H:i" }}</span>
+        <button type="button" class="btn primary" data-toggle="{{ t.pk }}" data-url="{% url 'toggle_task' t.pk %}" data-label="done">{% if t.done %}Undo{% else %}Mark done{% endif %}</button>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% if plan.source == "demo" %}<p class="muted small">Demo plan. Add your OPENROUTER_API_KEY to get tailored posts.</p>{% endif %}
+{% else %}
+  <div class="card empty">
+    <h2>No plan for today yet</h2>
+    <p class="muted">Generate it to get your posts, reply sessions, and times.</p>
+  </div>
+{% endif %}
+{% endblock %}

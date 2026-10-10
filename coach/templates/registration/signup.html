@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Create account{% endblock %}
+{% block content %}
+<section class="auth card">
+  <h1>Create your account</h1>
+  <form method="post" class="form">{% csrf_token %}
+    {% include "_field.html" with field=form.email %}
+    {% include "_field.html" with field=form.password %}
+    <button class="btn primary lg" type="submit">Continue</button>
+  </form>
+  <p class="muted">Already have an account? <a href="{% url 'login' %}">Log in</a></p>
+</section>
+{% endblock %}

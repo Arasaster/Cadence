@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Reply helper{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Reply helper</h1>
+    <p class="muted">Paste a post from X. You get three angles to make your own, then you write and send the reply yourself.</p>
+  </div>
+</div>
+<div class="two-col">
+  <form method="post" class="card form">{% csrf_token %}
+    {% include "_field.html" with field=form.author %}
+    {% include "_field.html" with field=form.post_text %}
+    <button class="btn primary lg" type="submit">Get reply angles</button>
+  </form>
+  <section class="panel">
+    <p class="panel-title">Angles</p>
+    {% if result %}
+      {% for a in result.angles %}
+        <div class="angle">
+          <b>{{ a.label }}</b>
+          <blockquote class="draft">{{ a.reply|linebreaksbr }}</blockquote>
+          <div class="actions"><button type="button" class="btn sm copy" data-text="{{ a.reply }}">Copy</button></div>
+        </div>
+      {% endfor %}
+      {% if result.tip %}<p class="why">{{ result.tip }}</p>{% endif %}
+    {% else %}
+      <p class="why">Your three reply angles will show here.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

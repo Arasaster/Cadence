@@ -1,0 +1,37 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ APP_NAME }}{% endblock %} · {{ APP_NAME }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'coach/app.css' %}">
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="{% if user.is_authenticated %}{% url 'today' %}{% else %}{% url 'landing' %}{% endif %}"><i class="mark"></i>{{ APP_NAME }}</a>
+    {% if user.is_authenticated %}
+    <nav class="pillnav" aria-label="Main">
+      <a href="{% url 'today' %}" class="{% if request.resolver_match.url_name == 'today' %}on{% endif %}">Today</a>
+      <a href="{% url 'replies' %}" class="{% if request.resolver_match.url_name == 'replies' %}on{% endif %}">Reply helper</a>
+      <a href="{% url 'insights' %}" class="{% if request.resolver_match.url_name == 'insights' %}on{% endif %}">Insights</a>
+      <a href="{% url 'onboarding' %}" class="{% if request.resolver_match.url_name == 'onboarding' %}on{% endif %}">Settings</a>
+    </nav>
+    <form method="post" action="{% url 'logout' %}" class="me">{% csrf_token %}
+      <button type="submit" class="avatar" title="Log out ({{ user.email }})" aria-label="Log out {{ user.email }}">{{ user.email|slice:":1"|upper }}</button>
+    </form>
+    {% else %}
+    <div class="me-links"><a class="btn sm" href="{% url 'login' %}">Log in</a></div>
+    {% endif %}
+  </header>
+  <main class="page">
+    {% for m in messages %}<div class="toast toast-{{ m.tags }}" role="status"><i></i>{{ m }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="{% static 'coach/app.js' %}" defer></script>
+</body>
+</html>
