@@ -16,13 +16,30 @@ Open http://localhost:8000, sign up, fill the setup form, tap **Generate today's
 - No `OPENROUTER_API_KEY` in `.env` → **demo mode** (template plan, so you can test the UI and flow).
 - With a key → tailored posts, reply angles, and plans in your voice.
 
-## Daily automation (cron or Railway cron)
+## Features
+Account types (individual, founder, creator, company, agency, community) change the voice of everything. 30 or 60 day
+roadmap that drives the daily Today tasks. Bio upgrader. Reply helper with post-link fetch (FixTweet), angle picker,
+sliders and per-angle regenerate. Natural emoji (shuffled in code, capped per account type). Landing page, Terms, Privacy.
 
+## New day, new tasks
+Today's plan is built automatically the first time you open Today on a new day (by your own timezone). If yesterday
+has unfinished tasks you can tick them or continue without finishing; the planner is told what was actually done and
+makes the day lighter if a lot was skipped. "Rebuild plan" replaces today's plan.
+
+## Email
+Render's free plan blocks SMTP ports, so the app sends through Brevo's HTTPS API.
+1. Create a Brevo account, verify a sender, create an API key.
+2. Set `BREVO_API_KEY` and `DEFAULT_FROM_EMAIL=Cadence <your-verified-sender>`.
+3. In the app: Settings, then "Send me a test email".
+A verified sender on your own domain delivers best. Free mail addresses (Gmail and similar) often land in spam.
+Without `BREVO_API_KEY`, emails print in the server console.
+
+## Daily automation
 ```bash
 python manage.py generate_plans --email     # once each morning
 python manage.py send_reminders             # every 5-10 minutes
 ```
-Emails print to your terminal until you set SMTP values in `.env` (Brevo, Resend SMTP, Gmail app password).
+On a host, use the `/cron/...` URLs below instead.
 
 ## Where to tune things
 
@@ -58,8 +75,8 @@ Django connects with the database owner role, which is not affected by this, so 
 2. **GitHub:** push this folder to a repo. `.env` is already git-ignored.
 3. **Render:** New, then Blueprint (reads `render.yaml`), or New Web Service with:
    - Build: `pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate --noinput`
-   - Start: `gunicorn config.wsgi`
-4. **Environment variables** (the Blueprint creates the list): `DATABASE_URL` (the Supabase string), `OPENROUTER_API_KEY`, `SITE_URL` (your onrender.com URL), SMTP values. `DJANGO_SECRET_KEY` and `CRON_SECRET` are generated for you. Copy `CRON_SECRET` for step 5.
+   - Start: `gunicorn config.wsgi --timeout 120` (AI calls can take a while)
+4. **Environment variables** (the Blueprint creates the list): `DATABASE_URL` (the Supabase string), `OPENROUTER_API_KEY`, `SITE_URL` (your onrender.com URL), `BREVO_API_KEY`, `DEFAULT_FROM_EMAIL`, `CONTACT_EMAIL`. `DJANGO_SECRET_KEY` and `CRON_SECRET` are generated for you. Copy `CRON_SECRET` for step 5.
 5. **Schedulers** (Render cron is paid, so use free cron-job.org). Call these URLs with the header `Authorization: Bearer <CRON_SECRET>`:
    - `GET /cron/plans/` once each morning (creates plans and emails the summary)
    - `GET /cron/reminders/` every 5 to 10 minutes (emails due tasks)
@@ -69,3 +86,8 @@ Render's free web service sleeps after about 15 minutes idle and takes ~30 secon
 ## Known limits (v1)
 - Insights come from the uploaded archive: posting trend, best hours, top posts, circle. The archive has no follower-count history, so "growth" means activity and engagement.
 - Reply tasks give guidance and angles, not bulk text, on purpose.
+
+## Before you launch
+- Have a lawyer review `terms.html` and `privacy.html`. They are a starting draft.
+- Set `CONTACT_EMAIL`, `COMPANY_NAME` and `GOVERNING_LAW` so the legal pages are correct.
+- The post-link fetch uses FixTweet, an unofficial service. It can change or fail; the paste fallback always works.

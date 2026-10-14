@@ -7,10 +7,24 @@
     <h1>Today</h1>
     <p class="muted">{{ now|date:"l, j F" }}</p>
   </div>
-  <form method="post" action="{% url 'generate' %}">{% csrf_token %}
-    <button class="btn" type="submit">{% if plan %}Regenerate plan{% else %}Generate today's plan{% endif %}</button>
+  {% if plan %}
+  <form method="post" action="{% url 'generate' %}" data-confirm="Rebuild today's plan? This replaces it and clears today's ticks.">{% csrf_token %}
+    <button class="btn sm" type="submit">Rebuild plan</button>
   </form>
+  {% endif %}
 </div>
+
+{% if rctx %}
+<a class="rm-strip" href="{% url 'roadmap' %}">
+  <span class="rm-day">Day {{ rctx.day }} of {{ rctx.of }}</span>
+  <span class="rm-phase"><b>{{ rctx.phase.name }}</b> &middot; {{ rctx.phase.focus }}</span>
+  <span class="rm-go">View roadmap</span>
+</a>
+{% elif roadmap %}
+<a class="rm-strip" href="{% url 'roadmap' %}"><span class="rm-day">Roadmap</span><span class="rm-phase">Your {{ roadmap.days }}-day roadmap is not running today. Open it to restart or create a new one.</span><span class="rm-go">Open</span></a>
+{% else %}
+<a class="rm-strip" href="{% url 'roadmap' %}"><span class="rm-day">New</span><span class="rm-phase">Create a 30 or 60 day roadmap and your daily tasks will follow it.</span><span class="rm-go">Create roadmap</span></a>
+{% endif %}
 
 {% if plan %}
 <section class="top-grid">
@@ -32,7 +46,7 @@
     {% else %}
       <span class="k">Next up</span>
       <b class="v big">All done</b>
-      <p class="nu-title">You finished today's plan. See you tomorrow.</p>
+      <p class="nu-title">You finished today's plan. Tomorrow's tasks appear on their own.</p>
     {% endif %}
   </div>
 </section>
@@ -82,7 +96,9 @@
             <div class="actions">
               <button type="button" class="btn sm copy" data-text="{{ b }}">Copy</button>
               <a class="btn sm" target="_blank" rel="noopener" href="{{ b|intent_url }}">Open in X</a>
+              <a class="btn sm sched" target="_blank" rel="noopener" href="{{ b|intent_url }}" data-time="{{ t.time|time:'H:i' }}" data-text="{{ b }}">Schedule post in X</a>
             </div>
+            <p class="sched-hint" hidden>Copied. In X's composer, click the <b>calendar icon</b> and pick <b>{{ t.time|time:"H:i" }}</b> (your local time). X does not let apps set the time for you.</p>
           {% endfor %}
         {% else %}
           <p class="body">{{ t.body|linebreaksbr }}</p>
@@ -98,11 +114,31 @@
     {% endfor %}
   </div>
 </section>
-{% if plan.source == "demo" %}<p class="muted small">Demo plan. Add your OPENROUTER_API_KEY to get tailored posts.</p>{% endif %}
+
+{% elif show_carry %}
+<section class="card carry" id="carryCard">
+  <h2>Before today's plan</h2>
+  <p class="muted">{{ carry_date|date:"l j F" }} still has {{ carry|length }} unfinished task{{ carry|length|pluralize }}. Tick anything you actually did.</p>
+  <ul class="carry-list">
+    {% for t in carry %}
+    <li>
+      <button type="button" class="tick" data-carry data-url="{% url 'toggle_task' t.pk %}" aria-pressed="false" aria-label="Mark done: {{ t.title }}"></button>
+      <span><b>{{ t.title }}</b><small>{{ t.time|time:"H:i" }} · {{ t.get_kind_display }}</small></span>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="warn" id="carryWarn">You can continue without ticking them, but Cadence builds today's plan from what you actually did. Unfinished work makes your plan less accurate.</p>
+  <a class="btn" id="carryGo" href="{% url 'today' %}?go=1" data-all="Continue to today's plan" data-skip="Continue without finishing">Continue without finishing</a>
+</section>
+
 {% else %}
-  <div class="card empty">
-    <h2>No plan for today yet</h2>
-    <p class="muted">Generate it to get your posts, reply sessions, and times.</p>
+<section class="card building" id="buildCard" data-url="{% url 'generate' %}">
+  <div class="spinner" id="buildSpin" aria-hidden="true"></div>
+  <div>
+    <h2>Building today's plan</h2>
+    <p class="muted" id="buildMsg">Using your roadmap, your recent progress and your voice. This takes a few seconds.</p>
+    <button type="button" class="btn primary" id="buildRetry" hidden>Try again</button>
   </div>
+</section>
 {% endif %}
 {% endblock %}

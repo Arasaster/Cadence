@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
 
+from coach.ai import AIError
 from coach.models import Plan, Profile
 from coach.views import _build_plan
 
@@ -17,7 +18,11 @@ class Command(BaseCommand):
         for profile in Profile.objects.select_related("user"):
             if Plan.objects.filter(user=profile.user, date=profile.today()).exists():
                 continue
-            plan = _build_plan(profile.user, profile)
+            try:
+                plan = _build_plan(profile.user, profile)
+            except AIError as exc:
+                self.stderr.write(f"{profile.user.email}: {exc}")
+                continue
             made += 1
             if opts["email"] and profile.email_reminders and profile.user.email:
                 lines = [f"{t.time:%H:%M}  {t.title}" for t in plan.tasks.all()]

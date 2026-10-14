@@ -128,7 +128,11 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 60 * 1024 * 1024
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+# Brevo's HTTPS API works on hosts that block SMTP ports (Render free plan)
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND") or (
+    "coach.email_backend.BrevoEmailBackend" if BREVO_API_KEY else "django.core.mail.backends.console.EmailBackend"
+)
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
@@ -142,3 +146,11 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+
+# Cost guard: max AI calls per user per day (plans, roadmaps, bios, replies)
+AI_DAILY_LIMIT = int(os.environ.get("AI_DAILY_LIMIT", "60"))
+
+# Shown in the Terms and Privacy pages
+COMPANY_NAME = os.environ.get("COMPANY_NAME", "Cadence")
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "support@example.com")
+GOVERNING_LAW = os.environ.get("GOVERNING_LAW", "the Federal Republic of Nigeria")

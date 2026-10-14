@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy{% endblock %}
+{% block content %}
+{# NOTE: starting draft. Have a qualified lawyer review before launch. #}
+<article class="legal">
+  <h1>Privacy Policy</h1>
+  <p class="muted">Last updated: 10 October 2026</p>
+  <p>This policy explains what {{ COMPANY_NAME }} ("we", "us") collects when you use {{ APP_NAME }}, why, and the choices you have.</p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><b>Account:</b> your email address and a securely hashed password.</li>
+    <li><b>What you tell us:</b> account type, X username, niche, audience, goals, follower numbers, tone, sample posts, your bio, timezone and routine settings.</li>
+    <li><b>Your X archive (optional):</b> if you upload tweets.js, we read it to calculate statistics such as post counts, best posting hours, your top posts and the accounts you interact with most. We keep these statistics, not the uploaded file.</li>
+    <li><b>Content you create:</b> roadmaps, plans, tasks, and whether you ticked them off. Text you paste into the reply helper and bio upgrader is processed to produce results.</li>
+    <li><b>Usage:</b> basic counts of AI requests per day, to prevent abuse and control costs.</li>
+  </ul>
+
+  <h2>How we use it</h2>
+  <p>To run the Service: to generate your roadmap, tasks, replies and bios, to send reminder emails you have turned on, to keep the Service secure, and to improve it. We do not sell your data and we do not show ads.</p>
+
+  <h2>Who else handles your data</h2>
+  <p>We use service providers who process data for us:</p>
+  <ul>
+    <li><b>AI providers</b> (through OpenRouter and the model provider behind it) receive your profile details and the text you submit so they can write results.</li>
+    <li><b>Database and hosting providers</b> store and serve the Service.</li>
+    <li><b>An email provider</b> sends reminders to your email address.</li>
+    <li><b>A post-reading service</b> receives the post link when you use "Fetch post" in the reply helper.</li>
+  </ul>
+  <p>Do not paste anything into the Service that you are not comfortable sharing with these providers.</p>
+
+  <h2>Cookies</h2>
+  <p>We use only the cookies needed to keep you signed in and protect your session. We do not use advertising cookies.</p>
+
+  <h2>How long we keep data</h2>
+  <p>Until you ask us to delete your account, or until it is no longer needed to run the Service. To request deletion, email {{ CONTACT_EMAIL }}.</p>
+
+  <h2>Your choices</h2>
+  <p>You can edit your information in Settings, turn off email reminders, and ask us to access, correct or delete your data under the data protection laws that apply to you.</p>
+
+  <h2>Security</h2>
+  <p>We take reasonable steps to protect your data, but no system is completely secure.</p>
+
+  <h2>Children</h2>
+  <p>The Service is not for anyone under 18.</p>
+
+  <h2>Changes</h2>
+  <p>We may update this policy and will tell you about significant changes.</p>
+
+  <h2>Contact</h2>
+  <p>{{ COMPANY_NAME }} &middot; {{ CONTACT_EMAIL }}</p>
+</article>
+{% endblock %}

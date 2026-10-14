@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Roadmap{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Roadmap</h1>
+    <p class="muted">A 30 or 60 day path from where your account is now to where you want it. Your daily tasks follow it.</p>
+  </div>
+</div>
+
+{% if rm %}
+  <section class="card">
+    <div class="rm-top">
+      <div>
+        <span class="k">{{ rm.days }}-day roadmap</span>
+        <b class="v">{% if view.finished %}Complete{% elif view.not_started %}Starts soon{% else %}Day {{ view.day }}<small> of {{ rm.days }}</small>{% endif %}</b>
+      </div>
+      <div class="rm-bar"><span style="width: {{ view.pct }}%"></span></div>
+    </div>
+    <p class="summary">{{ rm.summary }}</p>
+    <div class="facts">
+      <div class="tile"><span>Where you are</span><b>{{ rm.baseline }}</b></div>
+      <div class="tile"><span>Where you're going</span><b>{{ rm.target }}</b></div>
+    </div>
+    {% if rm.reality_check %}<div class="checkpoint"><b>Reality check:</b> {{ rm.reality_check }}</div>{% endif %}
+  </section>
+
+  <ol class="phases">
+    {% for ph in view.phases %}
+    <li class="phase {{ ph.state }}">
+      <div class="phase-head">
+        <span class="phase-days">Days {{ ph.start_day }}-{{ ph.end_day }}</span>
+        <h2>{{ ph.name }}</h2>
+        <span class="pill{% if ph.state == 'done' %} ok{% endif %}">{% if ph.state == 'done' %}Done{% elif ph.state == 'current' %}Now{% else %}Next{% endif %}</span>
+      </div>
+      <p class="phase-focus">{{ ph.focus }}</p>
+      <ul class="plain-list">{% for a in ph.actions %}<li>{{ a }}</li>{% endfor %}</ul>
+      {% if ph.content_pillars %}<p class="chips">{% for c in ph.content_pillars %}<span class="chip-s">{{ c }}</span>{% endfor %}</p>{% endif %}
+      <p class="checkpoint"><b>Checkpoint:</b> {{ ph.checkpoint }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+{% endif %}
+
+<section class="card {% if rm %}mt{% endif %}">
+  <h2>{% if rm %}Start a new roadmap{% else %}Create your roadmap{% endif %}</h2>
+  {% if rm %}<p class="muted">This replaces the current roadmap and restarts at day 1.</p>{% endif %}
+  <form method="post" class="form">{% csrf_token %}
+    <div class="field">
+      <label>Plan length</label>
+      <div class="seg-radio">{% for r in form.days %}<label>{{ r.tag }}<span>{{ r.choice_label }}</span></label>{% endfor %}</div>
+    </div>
+    {% include "_field.html" with field=form.note %}
+    <div><button class="btn primary lg" type="submit">Generate roadmap</button></div>
+    <p class="help">It uses your settings and, if you uploaded it, your X archive. This can take up to a minute.</p>
+  </form>
+</section>
+{% endblock %}

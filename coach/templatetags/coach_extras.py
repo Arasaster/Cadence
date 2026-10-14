@@ -31,3 +31,8 @@ def initial(text):
 @register.filter
 def letter(kind):
     return {"post": "P", "thread": "T", "reply_session": "R", "engage": "E", "review": "V"}.get(kind, "•")
+
+
+@register.filter
+def get_item(d, key):
+    return (d or {}).get(key, "")

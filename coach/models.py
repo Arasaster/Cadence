@@ -5,6 +5,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from .style import ACCOUNT_TYPE_CHOICES
+
 
 class Profile(models.Model):
     GOALS = [
@@ -23,7 +25,11 @@ class Profile(models.Model):
     ]
 
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile")
+    account_type = models.CharField(max_length=20, choices=ACCOUNT_TYPE_CHOICES, default="individual")
     x_username = models.CharField(max_length=30, blank=True)
+    current_followers = models.PositiveIntegerField(null=True, blank=True)
+    target_followers = models.PositiveIntegerField(null=True, blank=True)
+    target_note = models.CharField(max_length=300, blank=True)
     niche = models.CharField(max_length=200)
     goal = models.CharField(max_length=20, choices=GOALS, default="followers")
     audience = models.CharField(max_length=200)
@@ -54,8 +60,46 @@ class Profile(models.Model):
         return self.now_local().date()
 
 
+class Roadmap(models.Model):
+    """A 30 or 60 day plan from where the account is now to where the user wants it."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="roadmaps")
+    days = models.PositiveSmallIntegerField(default=30)
+    start_date = models.DateField()
+    summary = models.TextField(blank=True)
+    baseline = models.TextField(blank=True)
+    target = models.TextField(blank=True)
+    reality_check = models.TextField(blank=True)
+    phases = models.JSONField(default=list)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def day_number(self, today):
+        return (today - self.start_date).days + 1
+
+    def phase_for(self, day):
+        for ph in self.phases:
+            if ph["start_day"] <= day <= ph["end_day"]:
+                return ph
+        return None
+
+
+class AIUsage(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_usage")
+    date = models.DateField()
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ("user", "date")
+
+
 class Plan(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="plans")
+    roadmap = models.ForeignKey(Roadmap, null=True, blank=True, on_delete=models.SET_NULL, related_name="daily_plans")
+    day_number = models.PositiveSmallIntegerField(null=True, blank=True)
     date = models.DateField()
     summary = models.TextField(blank=True)
     source = models.CharField(max_length=10, default="ai")  # ai or demo

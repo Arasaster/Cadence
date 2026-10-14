@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'coach/app.css' %}">
+  <link rel="stylesheet" href="{% static 'coach/app.css' %}?v={{ ASSET_V }}">
 </head>
 <body>
 <div class="shell">
@@ -16,13 +16,19 @@
     {% if user.is_authenticated %}
     <nav class="pillnav" aria-label="Main">
       <a href="{% url 'today' %}" class="{% if request.resolver_match.url_name == 'today' %}on{% endif %}">Today</a>
+      <a href="{% url 'roadmap' %}" class="{% if request.resolver_match.url_name == 'roadmap' %}on{% endif %}">Roadmap</a>
       <a href="{% url 'replies' %}" class="{% if request.resolver_match.url_name == 'replies' %}on{% endif %}">Reply helper</a>
+      <a href="{% url 'bio' %}" class="{% if request.resolver_match.url_name == 'bio' %}on{% endif %}">Bio</a>
       <a href="{% url 'insights' %}" class="{% if request.resolver_match.url_name == 'insights' %}on{% endif %}">Insights</a>
-      <a href="{% url 'onboarding' %}" class="{% if request.resolver_match.url_name == 'onboarding' %}on{% endif %}">Settings</a>
     </nav>
-    <form method="post" action="{% url 'logout' %}" class="me">{% csrf_token %}
-      <button type="submit" class="avatar" title="Log out ({{ user.email }})" aria-label="Log out {{ user.email }}">{{ user.email|slice:":1"|upper }}</button>
-    </form>
+    <div class="me">
+      <a class="avatar{% if request.resolver_match.url_name == 'onboarding' %} on{% endif %}" href="{% url 'onboarding' %}" title="Settings ({{ user.email }})" aria-label="Settings">{{ user.email|slice:":1"|upper }}</a>
+      <form method="post" action="{% url 'logout' %}" class="logout-form">{% csrf_token %}
+        <button type="submit" class="icon-btn" title="Log out" aria-label="Log out">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        </button>
+      </form>
+    </div>
     {% else %}
     <div class="me-links"><a class="btn sm" href="{% url 'login' %}">Log in</a></div>
     {% endif %}
@@ -31,7 +37,11 @@
     {% for m in messages %}<div class="toast toast-{{ m.tags }}" role="status"><i></i>{{ m }}</div>{% endfor %}
     {% block content %}{% endblock %}
   </main>
+  <footer class="foot">
+    <span>&copy; {% now "Y" %} {{ COMPANY_NAME }}. Not affiliated with X Corp.</span>
+    <span class="foot-links"><a href="{% url 'terms' %}">Terms</a><a href="{% url 'privacy' %}">Privacy</a></span>
+  </footer>
 </div>
-<script src="{% static 'coach/app.js' %}" defer></script>
+<script src="{% static 'coach/app.js' %}?v={{ ASSET_V }}" defer></script>
 </body>
 </html>

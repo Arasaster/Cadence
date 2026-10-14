@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate --noinput
-    startCommand: gunicorn config.wsgi
+    startCommand: gunicorn config.wsgi --timeout 120
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
@@ -23,15 +23,11 @@ services:
         value: openai/gpt-4o-mini
       - key: SITE_URL
         sync: false
-      - key: EMAIL_BACKEND
-        value: django.core.mail.backends.smtp.EmailBackend
-      - key: EMAIL_HOST
-        sync: false
-      - key: EMAIL_PORT
-        value: "587"
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
+      - key: BREVO_API_KEY
         sync: false
       - key: DEFAULT_FROM_EMAIL
         sync: false
+      - key: CONTACT_EMAIL
+        sync: false
+      - key: COMPANY_NAME
+        value: Cadence

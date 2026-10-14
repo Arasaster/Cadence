@@ -6,6 +6,10 @@
   <form method="post" class="form">{% csrf_token %}
     {% include "_field.html" with field=form.email %}
     {% include "_field.html" with field=form.password %}
+    <div class="field{% if form.agree.errors %} has-error{% endif %}">
+      <label class="check-row">{{ form.agree }}<span>I agree to the <a href="{% url 'terms' %}" target="_blank" rel="noopener">Terms</a> and <a href="{% url 'privacy' %}" target="_blank" rel="noopener">Privacy Policy</a></span></label>
+      {% for e in form.agree.errors %}<p class="err">{{ e }}</p>{% endfor %}
+    </div>
     <button class="btn primary lg" type="submit">Continue</button>
   </form>
   <p class="muted">Already have an account? <a href="{% url 'login' %}">Log in</a></p>

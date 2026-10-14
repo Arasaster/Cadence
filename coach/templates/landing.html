@@ -1,28 +1,85 @@
 {% extends "base.html" %}
+{% block title %}Know exactly what to post on X{% endblock %}
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
-    <h1>Know exactly what to post on X today.</h1>
-    <p class="lead">{{ APP_NAME }} hands you a daily checklist: the posts to publish, the best times, and who to reply to. You post. It plans, writes, and reminds you by email.</p>
+    <p class="eyebrow">Daily X coach</p>
+    <h1>Know exactly what to post on X, every single day.</h1>
+    <p class="lead">{{ APP_NAME }} turns your goal into a 30 or 60 day roadmap, then hands you a daily checklist: the posts to publish, the best times, and who to reply to. You post. It plans, writes and reminds you.</p>
     <p class="cta-row">
       <a class="btn primary lg" href="{% url 'signup' %}">Create your free account</a>
-      <a class="btn lg" href="{% url 'login' %}">Log in</a>
+      <a class="btn lg" href="#how">See how it works</a>
     </p>
     <ul class="ticks">
-      <li>Posts written in your voice, ready to copy</li>
-      <li>Reply guidance for every session, never copy-paste spam</li>
-      <li>Nothing connects to your X account, so it stays safe</li>
+      <li>Never connects to your X account, so you stay in control</li>
+      <li>Voice that fits you: personal, company, agency and more</li>
+      <li>Reply help that adapts to every post</li>
     </ul>
   </div>
   <div class="hero-demo" aria-hidden="true">
     <div class="panel">
-      <p class="panel-title">Your tasks today</p>
+      <p class="panel-title">Day 12 of 60 &middot; Growth phase</p>
       <ul class="rows demo">
-        <li class="row sel"><span class="dot k-post">P</span><span class="r-main"><b>Post your strongest opinion</b><small>09:00 · Post</small></span><span class="pill">To do</span></li>
-        <li class="row"><span class="dot k-reply">R</span><span class="r-main"><b>Morning reply session</b><small>10:00 · 6 replies</small></span><span class="pill">To do</span></li>
-        <li class="row"><span class="dot k-other">E</span><span class="r-main"><b>Engage with 5 people</b><small>12:00 · Engage</small></span><span class="pill ok">Done</span></li>
+        <li class="row sel"><span class="dot k-post">P</span><span class="r-main"><b>Post your strongest opinion</b><small>09:00 &middot; Post</small></span><span class="pill">To do</span></li>
+        <li class="row"><span class="dot k-reply">R</span><span class="r-main"><b>Morning reply session</b><small>10:00 &middot; 6 replies</small></span><span class="pill">To do</span></li>
+        <li class="row"><span class="dot k-other">E</span><span class="r-main"><b>Engage with 5 people</b><small>12:00 &middot; Engage</small></span><span class="pill ok">Done</span></li>
       </ul>
     </div>
   </div>
+</section>
+
+<section class="band" id="how">
+  <h2 class="band-title">From stuck to a clear plan in three steps</h2>
+  <div class="steps">
+    <div class="card step"><span class="num">1</span><h3>Tell it about your account</h3><p class="muted">Account type, niche, audience, where you are and where you want to be. Upload your X archive for sharper advice.</p></div>
+    <div class="card step"><span class="num">2</span><h3>Get your roadmap</h3><p class="muted">Pick 30 or 60 days. You get phases, actions and a checkpoint for each one, built around your goal.</p></div>
+    <div class="card step"><span class="num">3</span><h3>Work the daily checklist</h3><p class="muted">Posts ready to copy, reply sessions, and email nudges when each task is due. Tick them off and keep going.</p></div>
+  </div>
+</section>
+
+<section class="band">
+  <h2 class="band-title">Built for how people actually grow</h2>
+  <div class="features">
+    <div class="card feat"><h3>30 or 60 day roadmap</h3><p class="muted">A path from your current account to your target, with honest checkpoints along the way.</p></div>
+    <div class="card feat"><h3>Daily tasks that follow the plan</h3><p class="muted">Every day's checklist is built from the phase you are in, so effort adds up instead of scattering.</p></div>
+    <div class="card feat"><h3>Reply helper with sliders</h3><p class="muted">Paste a post link, pick the angles, and tune casual to formal, playful to serious, short to detailed.</p></div>
+    <div class="card feat"><h3>Bio upgrader</h3><p class="muted">Paste your bio and get five stronger versions that fit in 160 characters and match your goal.</p></div>
+    <div class="card feat"><h3>Voice for your account type</h3><p class="muted">A company sounds like a company and a person sounds like a person. Emoji show up naturally, not on every line.</p></div>
+    <div class="card feat"><h3>Email reminders</h3><p class="muted">A nudge when each task is due, so consistency stops depending on willpower.</p></div>
+  </div>
+</section>
+
+<section class="band">
+  <h2 class="band-title">One tool for every kind of account</h2>
+  <p class="chips center">
+    <span class="chip-s">Individuals and personal brands</span>
+    <span class="chip-s">Founders</span>
+    <span class="chip-s">Creators</span>
+    <span class="chip-s">Companies and brands</span>
+    <span class="chip-s">Agencies</span>
+    <span class="chip-s">Communities, nonprofits and ministries</span>
+  </p>
+</section>
+
+<section class="band safe card">
+  <h2>Safe by design</h2>
+  <p class="muted">{{ APP_NAME }} never logs into your X account and never posts, follows or replies for you. You publish everything yourself, like any normal user. The reply helper gives you angles to rewrite in your own words, because copy-pasted replies are what get accounts flagged.</p>
+</section>
+
+<section class="band" id="faq">
+  <h2 class="band-title">Questions</h2>
+  <div class="faq">
+    <details><summary>Do I have to connect my X account?</summary><p class="muted">No. You never give {{ APP_NAME }} access to your account. To personalise your plan you can optionally upload your own data archive from X.</p></details>
+    <details><summary>Does it post for me?</summary><p class="muted">No. It writes and plans, you copy a post or open it in X and press the button yourself.</p></details>
+    <details><summary>Will it guarantee followers?</summary><p class="muted">No tool can. {{ APP_NAME }} gives you a clear plan and keeps you consistent, but results depend on your niche, effort and many things outside our control.</p></details>
+    <details><summary>Is the writing done by AI?</summary><p class="muted">Yes. Always read it, add your real examples where you see [brackets], and make it yours before you post.</p></details>
+    <details><summary>What do you do with my data?</summary><p class="muted">Only what is needed to run the service. See the <a href="{% url 'privacy' %}">Privacy Policy</a> for the details.</p></details>
+  </div>
+</section>
+
+<section class="band cta-band card">
+  <h2>Stop guessing what to post.</h2>
+  <p class="muted">Create your account and get your first roadmap in minutes.</p>
+  <p class="cta-row"><a class="btn primary lg" href="{% url 'signup' %}">Create your free account</a></p>
 </section>
 {% endblock %}

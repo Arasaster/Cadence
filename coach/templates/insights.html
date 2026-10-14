@@ -1,14 +1,114 @@
 {% extends "base.html" %}
 {% block title %}Insights{% endblock %}
 {% block content %}
+<style>
+  .ins-note { color: var(--muted); font-size: .85rem; margin: 6px 0 0; }
+  .ins-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; margin-top: 16px; }
+  .ins-grid > .card { min-width: 0; }
+  .c12 { grid-column: span 12; } .c8 { grid-column: span 8; } .c7 { grid-column: span 7; } .c6 { grid-column: span 6; }
+  .c5 { grid-column: span 5; } .c4 { grid-column: span 4; } .c3 { grid-column: span 3; }
+  .card h2 small { font-size: .8rem; color: var(--muted); font-weight: 500; margin-left: 8px; }
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 16px; }
+  .kpi { padding: 18px; }
+  .kpi .v { font-size: 1.7rem; }
+  .takeaways { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .takeaways li { position: relative; padding: 12px 14px 12px 40px; background: var(--tile); border-radius: 14px; line-height: 1.45; }
+  .takeaways li::before { content: ""; position: absolute; left: 16px; top: 19px; width: 10px; height: 10px; border-radius: 50%; background: var(--lime); }
+  .mom { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .mom .tile b { font-size: 1.4rem; }
+  .delta { font-size: .8rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; width: fit-content; margin-top: 4px; background: var(--tile-2); color: var(--muted); }
+  .delta.up { background: rgba(181,245,0,.18); color: var(--lime); }
+  .delta.down { background: rgba(255,123,114,.16); color: var(--err); }
+
+  /* heatmaps */
+  .cal-wrap { overflow-x: auto; padding-bottom: 4px; }
+  .cal { display: grid; grid-template-rows: repeat(7, 20px); grid-auto-flow: column; grid-auto-columns: minmax(14px, 1fr); gap: 4px; width: 100%; min-width: 520px; }
+  .hm { display: block; border-radius: 3px; background: var(--tile-2); }
+  .hm.l1 { background: #3a4a12; } .hm.l2 { background: #6a8b0a; } .hm.l3 { background: #98c900; } .hm.l4 { background: var(--lime); }
+  .hm.fut { visibility: hidden; }
+  .hm-grid { display: grid; grid-template-columns: 34px repeat(24, minmax(10px, 1fr)); gap: 3px; align-items: center; min-width: 520px; }
+  .hm-grid .hm { aspect-ratio: 1; }
+  .hm-day, .hm-lab { font-size: .72rem; color: var(--muted); }
+  .hm-lab { text-align: center; white-space: nowrap; }
+  .legend { display: flex; align-items: center; gap: 4px; font-size: .75rem; color: var(--muted); margin-top: 10px; }
+  .legend .hm { width: 12px; height: 12px; }
+  .facts-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .facts-row .tile { flex: 1; min-width: 120px; }
+
+  /* charts */
+  .line { width: 100%; height: auto; display: block; }
+  .line .grid { stroke: var(--line); stroke-width: 1; }
+  .line polyline { fill: none; stroke: var(--lime); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  .line circle { fill: var(--bg); stroke: var(--lime); stroke-width: 2.5; }
+  .line text { fill: var(--muted); font-size: 11px; }
+  .vbars { display: flex; align-items: flex-end; gap: 6px; height: 150px; border-bottom: 1px solid var(--line); }
+  .vcol { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; min-width: 0; }
+  .vcol i { display: block; width: 100%; background: var(--lime); border-radius: 6px 6px 2px 2px; min-height: 2px; }
+  .vcol i.alt { background: #5a6677; border-radius: 0; }
+  .vcol i.top { border-radius: 6px 6px 0 0; }
+  .vlabels { display: flex; gap: 6px; margin-top: 6px; }
+  .vlabels span { flex: 1; text-align: center; font-size: .72rem; color: var(--muted); min-width: 0; }
+  .hbars { display: flex; align-items: flex-end; gap: 3px; height: 90px; border-bottom: 1px solid var(--line); }
+  .hbars i { flex: 1; background: var(--lime); border-radius: 3px 3px 0 0; min-height: 2px; opacity: .85; }
+  .stack-legend { display: flex; gap: 14px; font-size: .78rem; color: var(--muted); margin-bottom: 8px; }
+  .stack-legend b { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; background: var(--lime); }
+  .stack-legend b.alt { background: #5a6677; }
+
+  /* what works */
+  .fmt { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .fmt li { display: grid; grid-template-columns: minmax(130px, 1.3fr) 2fr 46px 96px; gap: 12px; align-items: center; }
+  .fmt .lab { font-size: .92rem; line-height: 1.25; }
+  .fmt .lab small { display: block; color: var(--muted); font-size: .75rem; }
+  .fbar { height: 10px; background: var(--tile-2); border-radius: 99px; overflow: hidden; }
+  .fbar i { display: block; height: 100%; background: var(--lime); border-radius: 99px; }
+  .fmt .avg { text-align: right; font-variant-numeric: tabular-nums; }
+  .lift { font-size: .78rem; font-weight: 700; text-align: center; border-radius: 999px; padding: 2px 8px; background: var(--tile-2); color: var(--muted); }
+  .lift.up { background: rgba(181,245,0,.18); color: var(--lime); }
+  .lift.down { background: rgba(255,123,114,.16); color: var(--err); }
+  .words { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .word { background: var(--tile); border: 1px solid var(--line); border-radius: 999px; padding: .3rem .8rem; font-size: .85rem; }
+  .word small { color: var(--muted); margin-left: 6px; }
+  .sub { font-weight: 600; margin: 18px 0 6px; font-size: .92rem; }
+  .sub:first-child { margin-top: 0; }
+  .upd summary { cursor: pointer; font-weight: 600; }
+  .quote-meta { display: block; color: var(--paper-muted); font-size: .8rem; margin-top: 8px; }
+  /* hover details */
+  [data-tip] { cursor: default; }
+  .vcol:hover i, .hbars i:hover, .hm:hover { filter: brightness(1.35); }
+  .hm:not(.fut):hover { outline: 2px solid #fff; outline-offset: -1px; }
+  .fmt li, .people li { border-radius: 12px; padding: 4px 6px; margin: -4px -6px; transition: background .12s ease; }
+  .fmt li:hover, .people li:hover { background: var(--tile); }
+  .word:hover { border-color: var(--lime); }
+  .line .hit { fill: transparent; }
+  .line .pt { transition: r .12s ease, fill .12s ease; pointer-events: none; }
+  .line .dotg:hover .pt { r: 7; fill: var(--lime); }
+  #tip { position: fixed; z-index: 100; max-width: 300px; padding: 10px 12px; border-radius: 12px; background: #05080c; color: var(--text);
+         border: 1px solid rgba(255,255,255,.14); box-shadow: 0 12px 30px rgba(0,0,0,.55); font-size: .8rem; line-height: 1.45;
+         pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .1s ease, transform .1s ease; }
+  #tip.on { opacity: 1; transform: none; }
+  #tip b { display: block; font-size: .88rem; margin-bottom: 3px; color: var(--lime); }
+  #tip span { display: block; color: #cfd6df; }
+  @media (max-width: 960px) {
+    .c8, .c7, .c6, .c5, .c4, .c3 { grid-column: span 12; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .fmt li { grid-template-columns: 1fr 70px; }
+    .fmt .fbar { grid-column: 1 / -1; order: 3; }
+    .fmt .avg { display: none; }
+  }
+  @media (max-width: 560px) { .mom { grid-template-columns: 1fr; } }
+</style>
+
 <div class="page-head">
   <div>
     <h1>Insights</h1>
-    <p class="muted">Upload your own X data archive. It stays in your account and tunes your daily plan.</p>
+    <p class="muted">Deeper than X's own analytics: what works for you, when you post, how consistent you are, and who you talk to. Built from your own X archive.</p>
   </div>
 </div>
+
+{% if not stats %}
 <section class="card">
-  <details class="how">
+  <h2>Upload your X archive</h2>
+  <details class="how" open>
     <summary>How do I get my archive?</summary>
     <ol>
       <li>On X, open Settings, then Your account, then Download an archive of your data.</li>
@@ -21,40 +121,247 @@
     <div><button class="btn primary" type="submit">Analyse my archive</button></div>
   </form>
 </section>
+{% else %}
 
-{% if stats %}
-<section class="stat-row">
-  <div class="card stat"><span class="k">Original posts</span><b class="v">{{ stats.total_posts }}</b></div>
-  <div class="card stat"><span class="k">Replies</span><b class="v">{{ stats.total_replies }}</b></div>
-  <div class="card stat"><span class="k">First post</span><b class="v">{{ stats.first_post }}</b></div>
-  <div class="card stat"><span class="k">Best hours</span><b class="v sm">{{ stats.best_hours|join:", "|default:"Not enough data" }}</b></div>
-</section>
-
+{% if not stats.version %}
 <section class="card">
-  <h2>Posts per month</h2>
-  <div class="bars">
-    {% for m in stats.per_month %}
-      <div class="barcol" title="{{ m.month }}: {{ m.count }}"><i style="height: {{ m.pct }}%"></i><span>{{ m.month|slice:"5:" }}</span></div>
-    {% endfor %}
-  </div>
+  <h2>Unlock the new charts</h2>
+  <p class="muted">Your saved analysis is from an older version. Upload your <b>tweets.js</b> again below to get the full set of charts. Your basic numbers are shown for now.</p>
+</section>
+{% endif %}
+
+{% if stats.version and not stats.hours.0.tip %}
+<section class="card">
+  <h2>Add hover details</h2>
+  <p class="muted">Upload your <b>tweets.js</b> once more (bottom of this page) and every chart will show details when you hover over it.</p>
+</section>
+{% endif %}
+
+<section class="kpis">
+  <div class="card kpi"><span class="k">Original posts</span><b class="v">{{ stats.total_posts }}</b></div>
+  <div class="card kpi"><span class="k">Replies</span><b class="v">{{ stats.total_replies }}</b></div>
+  {% if stats.version %}
+  <div class="card kpi"><span class="k">Typical likes per post</span><b class="v">{{ stats.median_likes }}</b></div>
+  <div class="card kpi"><span class="k">Longest streak</span><b class="v">{{ stats.calendar.longest_streak }}<small> days</small></b></div>
+  <div class="card kpi"><span class="k">Active days</span><b class="v">{{ stats.calendar.active_pct }}<small>%</small></b></div>
+  {% else %}
+  <div class="card kpi"><span class="k">First post</span><b class="v">{{ stats.first_post }}</b></div>
+  <div class="card kpi"><span class="k">Best hours</span><b class="v sm">{{ stats.best_hours|join:", "|default:"Not enough data" }}</b></div>
+  {% endif %}
 </section>
 
-<section class="two-col">
-  <div class="card">
+{% if stats.version %}
+<div class="ins-grid">
+
+  <section class="card c7">
+    <h2>What this means for you</h2>
+    <ul class="takeaways">{% for t in stats.takeaways %}<li>{{ t }}</li>{% endfor %}</ul>
+    <p class="ins-note">Based only on your archive: likes and reposts. X does not include impressions or follower history in it.</p>
+  </section>
+
+  <section class="card c5">
+    <h2>Momentum <small>last 30 days vs the 30 before</small></h2>
+    {% if stats.momentum %}
+    <div class="mom">
+      <div class="tile"><span>Posts</span><b>{{ stats.momentum.posts.now }}</b>
+        <span class="delta {% if stats.momentum.posts.change is None %}{% elif stats.momentum.posts.change >= 0 %}up{% else %}down{% endif %}">{% if stats.momentum.posts.change is None %}new{% else %}{{ stats.momentum.posts.change|stringformat:"+d" }}%{% endif %}</span></div>
+      <div class="tile"><span>Replies</span><b>{{ stats.momentum.replies.now }}</b>
+        <span class="delta {% if stats.momentum.replies.change is None %}{% elif stats.momentum.replies.change >= 0 %}up{% else %}down{% endif %}">{% if stats.momentum.replies.change is None %}new{% else %}{{ stats.momentum.replies.change|stringformat:"+d" }}%{% endif %}</span></div>
+      <div class="tile"><span>Avg likes</span><b>{{ stats.momentum.likes.now }}</b>
+        <span class="delta {% if stats.momentum.likes.change is None %}{% elif stats.momentum.likes.change >= 0 %}up{% else %}down{% endif %}">{% if stats.momentum.likes.change is None %}new{% else %}{{ stats.momentum.likes.change|stringformat:"+d" }}%{% endif %}</span></div>
+    </div>
+    <p class="ins-note">Measured back from your latest post ({{ stats.calendar.end }}).</p>
+    {% else %}
+    <p class="muted">Needs at least 60 days of history in your archive.</p>
+    {% endif %}
+    <div class="facts-row">
+      <div class="tile"><b>{{ stats.calendar.current_streak }}</b><span>day streak at the end</span></div>
+      <div class="tile"><b>{{ stats.calendar.longest_gap }}</b><span>longest break (days)</span></div>
+    </div>
+  </section>
+
+  <section class="card c12">
+    <h2>Posting calendar <small>last 26 weeks, every post and reply</small></h2>
+    <div class="cal-wrap">
+      <div class="cal">{% for week in stats.calendar.weeks %}{% for d in week %}<i class="hm l{{ d.level }}{% if d.future %} fut{% endif %}" data-tip="{{ d.tip }}"></i>{% endfor %}{% endfor %}</div>
+    </div>
+    <div class="legend">Less <i class="hm"></i><i class="hm l1"></i><i class="hm l2"></i><i class="hm l3"></i><i class="hm l4"></i> More</div>
+  </section>
+
+  <section class="card c6">
+    <h2>Average likes by month</h2>
+    {% if stats.likes_trend.dots %}
+    <svg class="line" viewBox="0 0 600 190" role="img" aria-label="Average likes per original post, by month">
+      <line class="grid" x1="20" x2="590" y1="30" y2="30"/><line class="grid" x1="20" x2="590" y1="95" y2="95"/><line class="grid" x1="20" x2="590" y1="160" y2="160"/>
+      <text x="22" y="24">{{ stats.likes_trend.max }}</text><text x="22" y="154">0</text>
+      <polyline points="{{ stats.likes_trend.points }}"/>
+      {% for d in stats.likes_trend.dots %}<g class="dotg" data-tip="{{ d.tip }}"><circle class="hit" cx="{{ d.x }}" cy="{{ d.y }}" r="16"/><circle class="pt" cx="{{ d.x }}" cy="{{ d.y }}" r="4"/></g>{% endfor %}
+      {% for l in stats.likes_trend.labels %}<text x="{{ l.x }}" y="182" text-anchor="middle">{{ l.text }}</text>{% endfor %}
+    </svg>
+    {% else %}<p class="muted">Not enough posts yet.</p>{% endif %}
+  </section>
+
+  <section class="card c6">
+    <h2>Posts and replies by month</h2>
+    <div class="stack-legend"><span><b></b>Posts</span><span><b class="alt"></b>Replies</span></div>
+    <div class="vbars">
+      {% for m in stats.mix %}<div class="vcol" data-tip="{{ m.tip }}"><i class="alt top" style="height: {{ m.replies_pct }}%"></i><i style="height: {{ m.posts_pct }}%"></i></div>{% endfor %}
+    </div>
+    <div class="vlabels">{% for m in stats.mix %}<span>{{ m.month|slice:"5:" }}</span>{% endfor %}</div>
+  </section>
+
+  <section class="card c5">
+    <h2>Best day to post <small>average likes</small></h2>
+    <div class="vbars">
+      {% for d in stats.weekday %}<div class="vcol" data-tip="{{ d.tip }}"><i style="height: {{ d.pct }}%"></i></div>{% endfor %}
+    </div>
+    <div class="vlabels">{% for d in stats.weekday %}<span>{{ d.day }}</span>{% endfor %}</div>
+    <h3 class="sub">When you post <small class="muted">number of posts by hour</small></h3>
+    <div class="hbars">{% for h in stats.hours %}<i style="height: {{ h.pct }}%" data-tip="{{ h.tip }}"></i>{% endfor %}</div>
+    <div class="vlabels">{% for l in stats.hour_labels %}<span>{{ l }}</span>{% endfor %}</div>
+  </section>
+
+  <section class="card c7">
+    <h2>Best time slots <small>average likes by day and hour</small></h2>
+    <div class="cal-wrap">
+      <div class="hm-grid">
+        {% for row in stats.heatmap %}<span class="hm-day">{{ row.day }}</span>{% for c in row.cells %}<i class="hm l{{ c.level }}" data-tip="{{ c.tip }}"></i>{% endfor %}{% endfor %}
+        <span></span>{% for l in stats.hour_labels %}<span class="hm-lab">{{ l }}</span>{% endfor %}
+      </div>
+    </div>
+    <div class="legend">Fewer likes <i class="hm"></i><i class="hm l1"></i><i class="hm l2"></i><i class="hm l3"></i><i class="hm l4"></i> More likes</div>
+    <p class="ins-note">Hover a cell for the number of posts. Slots with only one or two posts are a weak signal.</p>
+  </section>
+
+  <section class="card c12">
+    <h2>What works for you <small>average likes, posts with it vs without it</small></h2>
+    <ul class="fmt">
+      {% for f in stats.formats %}
+      <li data-tip="{{ f.tip }}">
+        <span class="lab">{{ f.label }}<small>{{ f.n }} post{{ f.n|pluralize }}{% if f.n %} · others avg {{ f.without_avg }}{% endif %}</small></span>
+        <span class="fbar"><i style="width: {{ f.pct }}%"></i></span>
+        <span class="avg">{{ f.with_avg }}</span>
+        <span class="lift {% if f.lift is None %}{% elif f.lift >= 0 %}up{% else %}down{% endif %}">{% if f.lift is None %}need 5+{% else %}{{ f.lift|stringformat:"+d" }}%{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="ins-note">A result needs at least 5 posts with and 5 without the feature before a percentage is shown.</p>
+  </section>
+
+  <section class="card c6">
+    <h2>Post length vs likes</h2>
+    <div class="vbars">
+      {% for b in stats.length_buckets %}<div class="vcol" data-tip="{{ b.tip }}"><i style="height: {{ b.pct }}%"></i></div>{% endfor %}
+    </div>
+    <div class="vlabels">{% for b in stats.length_buckets %}<span>{{ b.label|cut:" chars" }}<br>({{ b.n }})</span>{% endfor %}</div>
+  </section>
+
+  <section class="card c6">
+    <h2>How your posts perform <small>share of posts by likes</small></h2>
+    <ul class="fmt">
+      {% for d in stats.distribution %}
+      <li data-tip="{{ d.tip }}" style="grid-template-columns: 80px 1fr 56px">
+        <span class="lab">{{ d.label }}</span>
+        <span class="fbar"><i style="width: {{ d.pct }}%"></i></span>
+        <span class="avg">{{ d.share }}%</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="card c6">
+    <h2>Topics</h2>
+    <p class="sub">Words in your posts that earn the most likes</p>
+    <div class="words">{% for w in stats.winning_words %}<span class="word" data-tip="{{ w.tip }}">{{ w.word }}<small>{{ w.avg }} avg · {{ w.n }}x</small></span>{% empty %}<span class="muted">Needs words used in at least 3 posts.</span>{% endfor %}</div>
+    <p class="sub">Words you use most</p>
+    <div class="words">{% for w in stats.frequent_words %}<span class="word" data-tip="{{ w.tip }}">{{ w.word }}<small>{{ w.n }}x</small></span>{% empty %}<span class="muted">Nothing yet.</span>{% endfor %}</div>
+    {% if stats.top_hashtags %}
+    <p class="sub">Hashtags</p>
+    <div class="words">{% for w in stats.top_hashtags %}<span class="word" data-tip="{{ w.tip }}">#{{ w.word }}<small>{{ w.avg }} avg · {{ w.n }}x</small></span>{% endfor %}</div>
+    {% endif %}
+  </section>
+
+  <section class="card c6">
     <h2>Your circle</h2>
     <p class="muted">People you reply to and mention most.</p>
     <ul class="people">
       {% for c in stats.circle %}
-        <li><span class="dot a{% cycle '1' '2' '3' '4' %}">{{ c.name|slice:":1"|upper }}</span><b>@{{ c.name }}</b><span class="muted">{{ c.count }} interaction{{ c.count|pluralize }}</span></li>
+        <li data-tip="{{ c.tip }}"><span class="dot a{% cycle '1' '2' '3' '4' %}">{{ c.name|slice:":1"|upper }}</span><b>@{{ c.name }}</b><span class="muted">{{ c.count }} interaction{{ c.count|pluralize }}</span></li>
       {% empty %}<li class="muted">Nothing yet.</li>{% endfor %}
     </ul>
-  </div>
-  <div class="panel">
+  </section>
+
+  <section class="panel c12">
     <p class="panel-title">Your best posts</p>
     {% for p in stats.top_posts %}
-      <blockquote class="draft">{{ p.text|linebreaksbr }}<span class="meta">{{ p.likes }} likes · {{ p.rts }} reposts · {{ p.date }}</span></blockquote>
+      <blockquote class="draft">{{ p.text|linebreaksbr }}<span class="quote-meta">{{ p.likes }} likes · {{ p.rts }} reposts · {{ p.date }}</span></blockquote>
     {% endfor %}
-  </div>
+  </section>
+</div>
+
+{% else %}
+<div class="two-col">
+  <section class="card">
+    <h2>Your circle</h2>
+    <ul class="people">{% for c in stats.circle %}<li><span class="dot a{% cycle '1' '2' '3' '4' %}">{{ c.name|slice:":1"|upper }}</span><b>@{{ c.name }}</b><span class="muted">{{ c.count }}</span></li>{% endfor %}</ul>
+  </section>
+  <section class="panel">
+    <p class="panel-title">Your best posts</p>
+    {% for p in stats.top_posts %}<blockquote class="draft">{{ p.text|linebreaksbr }}<span class="quote-meta">{{ p.likes }} likes · {{ p.rts }} reposts · {{ p.date }}</span></blockquote>{% endfor %}
+  </section>
+</div>
+{% endif %}
+
+<section class="card mt">
+  <details class="upd">
+    <summary>Update with a newer archive</summary>
+    <form method="post" enctype="multipart/form-data" class="form" style="margin-top:14px">{% csrf_token %}
+      {% include "_field.html" with field=form.file %}
+      <div><button class="btn primary" type="submit">Analyse my archive</button></div>
+    </form>
+  </details>
 </section>
 {% endif %}
+<div id="tip" role="tooltip"></div>
+<script>
+(function () {
+  var tip = document.getElementById("tip"), pinned = null;
+  function fill(text) {
+    tip.textContent = "";
+    var lines = text.split("\n");
+    lines.forEach(function (ln, i) {
+      var el = document.createElement(i === 0 ? "b" : "span");
+      el.textContent = ln;
+      tip.appendChild(el);
+    });
+  }
+  function place(x, y) {
+    var w = tip.offsetWidth, h = tip.offsetHeight, pad = 14;
+    var left = x + pad, top = y + pad;
+    if (left + w > window.innerWidth - 8) left = x - w - pad;
+    if (top + h > window.innerHeight - 8) top = y - h - pad;
+    tip.style.left = Math.max(8, left) + "px";
+    tip.style.top = Math.max(8, top) + "px";
+  }
+  function target(e) { return e.target.closest ? e.target.closest("[data-tip]") : null; }
+  function show(el, x, y) {
+    var t = el.getAttribute("data-tip");
+    if (!t) return hide();
+    fill(t); tip.classList.add("on"); place(x, y);
+  }
+  function hide() { tip.classList.remove("on"); pinned = null; }
+  document.addEventListener("pointermove", function (e) {
+    if (e.pointerType === "touch") return;
+    var el = target(e);
+    if (el) show(el, e.clientX, e.clientY); else hide();
+  });
+  document.addEventListener("pointerdown", function (e) {
+    if (e.pointerType !== "touch") return;
+    var el = target(e);
+    if (el && el !== pinned) { pinned = el; show(el, e.clientX, e.clientY); } else hide();
+  });
+  document.addEventListener("scroll", hide, true);
+  document.addEventListener("mouseleave", hide);
+})();
+</script>
 {% endblock %}

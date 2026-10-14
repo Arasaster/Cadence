@@ -1,31 +1,137 @@
 {% extends "base.html" %}
+{% load coach_extras %}
 {% block title %}Reply helper{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <h1>Reply helper</h1>
-    <p class="muted">Paste a post from X. You get three angles to make your own, then you write and send the reply yourself.</p>
+    <p class="muted">Cadence reads the post and the conversation first, then helps you say something that adds to it, in your voice.</p>
   </div>
 </div>
 <div class="two-col">
-  <form method="post" class="card form">{% csrf_token %}
-    {% include "_field.html" with field=form.author %}
-    {% include "_field.html" with field=form.post_text %}
-    <button class="btn primary lg" type="submit">Get reply angles</button>
-  </form>
-  <section class="panel">
-    <p class="panel-title">Angles</p>
-    {% if result %}
-      {% for a in result.angles %}
-        <div class="angle">
-          <b>{{ a.label }}</b>
-          <blockquote class="draft">{{ a.reply|linebreaksbr }}</blockquote>
-          <div class="actions"><button type="button" class="btn sm copy" data-text="{{ a.reply }}">Copy</button></div>
+  <form method="post" class="card form" id="replyForm">{% csrf_token %}
+    {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+
+    <div class="field">
+      <label for="{{ form.link.id_for_label }}">Post link</label>
+      <div class="inline-row">
+        {{ form.link }}
+        <button type="button" class="btn icon" id="pasteBtn" title="Paste link from clipboard" aria-label="Paste link from clipboard">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+        </button>
+        <button type="button" class="btn" id="fetchBtn" data-url="{% url 'reply_fetch' %}">Fetch post</button>
+      </div>
+      <p class="help" id="fetchStatus">Paste a link and fetch it, or write the post text below.</p>
+    </div>
+
+    <div class="preview" id="preview"{% if not form.post_text.value %} hidden{% endif %}>
+      <div class="pv-head"><b id="pvAuthor">{{ form.author.value|default:"" }}</b><span class="muted" id="pvMeta">{{ form.post_meta.value|default:"" }}</span></div>
+      <p id="pvText">{{ form.post_text.value|default:""|truncatechars:300 }}</p>
+    </div>
+    {{ form.post_meta }}
+
+    <details class="soft" id="postEdit"{% if not form.post_text.value %} open{% endif %}>
+      <summary>Edit the post text</summary>
+      <div class="soft-body">
+        {% include "_field.html" with field=form.post_text %}
+        <div class="grid2 start">
+          {% include "_field.html" with field=form.author %}
+          {% include "_field.html" with field=form.author_bio %}
         </div>
-      {% endfor %}
-      {% if result.tip %}<p class="why">{{ result.tip }}</p>{% endif %}
+      </div>
+    </details>
+
+    <details class="soft"{% if form.top_replies.value %} open{% endif %}>
+      <summary>Replies already there (sharper check)</summary>
+      <div class="soft-body">{% include "_field.html" with field=form.top_replies %}</div>
+    </details>
+
+    <div class="field">
+      <label>{{ form.intent.label }}</label>
+      <div class="intent-grid">
+        {% for r in form.intent %}
+        <label class="intent">{{ r.tag }}<span><b>{{ r.choice_label }}</b><small>{{ intent_help|get_item:r.data.value }}</small></span></label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="grid2 start">
+      <div class="field">
+        <label>Voice</label>
+        <div class="seg-radio">{% for r in form.voice %}<label>{{ r.tag }}<span>{{ r.choice_label }}</span></label>{% endfor %}</div>
+        <p class="help">{% if has_examples %}Learned from your own posts.{% else %}Add sample posts in Settings or upload your archive so replies sound like you.{% endif %}</p>
+      </div>
+      <div class="field">
+        <label>Length</label>
+        <div class="seg-radio">{% for r in form.length %}<label>{{ r.tag }}<span>{{ r.choice_label }}</span></label>{% endfor %}</div>
+      </div>
+    </div>
+
+    {% include "_field.html" with field=form.instruction %}
+
+    <details class="soft">
+      <summary>Advanced tone</summary>
+      <div class="soft-body sliders">
+        {% for s in form.slider_fields %}
+        <div class="slider">
+          <div class="slider-top"><span>{{ s.low }}</span><span>{{ s.high }}</span></div>
+          {{ s.field }}
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+
+    {{ form.force }}
+    <button class="btn primary lg" type="submit">Read the post and write replies</button>
+  </form>
+
+  <section class="panel">
+    {% if out %}
+      <p class="panel-title">What Cadence read</p>
+      <dl class="read">
+        {% if out.read.topic %}<dt>Topic</dt><dd>{{ out.read.topic }}</dd>{% endif %}
+        {% if out.read.intent %}<dt>Their intent</dt><dd>{{ out.read.intent }}</dd>{% endif %}
+        {% if out.read.argument %}<dt>Core argument</dt><dd>{{ out.read.argument }}</dd>{% endif %}
+        {% if out.read.context %}<dt>Context</dt><dd>{{ out.read.context }}</dd>{% endif %}
+      </dl>
+
+      <p class="panel-title">The conversation</p>
+      {% if not out.read.has_replies %}<p class="why">No replies were pasted, so this check uses the post alone. Paste a few top replies for a sharper read.</p>{% endif %}
+      {% if out.read.repeated_points %}<p class="sub-label">Already said</p><ul class="mini">{% for x in out.read.repeated_points %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+      {% if out.read.gaps %}<p class="sub-label">Still missing</p><ul class="mini">{% for x in out.read.gaps %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+      {% if out.read.obvious_point_taken %}<div class="note">The obvious point has already been made several times, so these replies steer away from it.</div>{% endif %}
+      {% if out.read.suggested_angle %}<p class="why"><b>Better angle:</b> {{ out.read.suggested_angle }}</p>{% endif %}
+
+      {% if not out.worth %}
+        <div class="nothing">
+          <b>Nothing useful to add here.</b>
+          <p>{{ out.skip_reason }}</p>
+          <button type="button" class="btn" id="forceBtn">Reply anyway</button>
+        </div>
+      {% else %}
+        <p class="panel-title">Three different replies</p>
+        {% for r in out.replies %}
+        <div class="rp">
+          <div class="rp-head"><span class="pill appr">{{ r.approach }}</span><span class="rp-angle">{{ r.angle }}</span></div>
+          <textarea class="rp-text" rows="3" aria-label="{{ r.approach }} reply">{{ r.text }}</textarea>
+          <div class="rp-meta"><span class="count{% if r.over %} over{% endif %}">{{ r.length }}/280</span></div>
+          <div class="actions">
+            <button type="button" class="btn sm rp-edit">Edit</button>
+            <button type="button" class="btn sm rp-copy">Copy</button>
+            <button type="button" class="btn sm rp-act" data-mode="shorter">Make shorter</button>
+            <button type="button" class="btn sm rp-act" data-mode="natural">Make more natural</button>
+            <button type="button" class="btn sm rp-act" data-mode="angle">Try another angle</button>
+            <button type="button" class="btn sm rp-act" data-mode="regenerate">Regenerate</button>
+          </div>
+        </div>
+        {% endfor %}
+        {% if out.tip %}<p class="why">{{ out.tip }}</p>{% endif %}
+        {{ regen|json_script:"replyCtx" }}
+        <input type="hidden" id="replyActUrl" value="{% url 'reply_one' %}">
+      {% endif %}
     {% else %}
-      <p class="why">Your three reply angles will show here.</p>
+      <p class="panel-title">Replies</p>
+      <p class="why">Fetch a post and pick what you want the reply to do. Cadence will show what it read, what has already been said in the replies, and three genuinely different replies to edit.</p>
     {% endif %}
   </section>
 </div>

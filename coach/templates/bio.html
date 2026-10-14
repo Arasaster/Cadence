@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Bio positioning{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Bio positioning</h1>
+    <p class="muted">Work out what your profile should say first, then get five clear ways to say it. You don't need to know how to write a good bio.</p>
+  </div>
+</div>
+<div class="two-col">
+  <form method="post" class="card form" id="bioForm">{% csrf_token %}
+    {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+    <div class="field{% if form.current_bio.errors %} has-error{% endif %}">
+      <label for="bioInput">{{ form.current_bio.label }}</label>
+      {{ form.current_bio }}
+      <p class="help"><span id="bioCount" class="count-live">0/160</span> characters. X allows 160.</p>
+      {% for e in form.current_bio.errors %}<p class="err">{{ e }}</p>{% endfor %}
+    </div>
+
+    <div class="field">
+      <label>{{ form.goal.label }}</label>
+      <div class="chips-pick">{% for r in form.goal %}<label class="chip">{{ r.tag }}<span>{{ r.choice_label }}</span></label>{% endfor %}</div>
+    </div>
+
+    {% include "_field.html" with field=form.role %}
+    {% include "_field.html" with field=form.notes %}
+
+    <div class="field">
+      <label class="check-row">{{ form.use_data }}<span>{{ form.use_data.label }}</span></label>
+      <p class="help">{% if has_data %}Your archive is uploaded, so Cadence can see what you really talk about.{% else %}Upload your X archive in Insights to unlock this check.{% endif %}</p>
+    </div>
+    <button class="btn primary lg" type="submit">Analyse and build my positioning</button>
+  </form>
+
+  <section class="panel">
+    {% if result %}
+      <p class="panel-title">Your current bio</p>
+      <div class="score">
+        <p class="score-top"><b>{{ result.current_length }} / 160</b> characters</p>
+        {% for name, val in result.score.items %}
+        <div class="meter"><span class="m-label">{{ name|capfirst }}</span><span class="m-bar"><i style="width: {% widthratio val 10 100 %}%"></i></span><span class="m-val">{{ val }}/10</span></div>
+        {% endfor %}
+        <p class="opp"><b>Main opportunity:</b> {{ result.opportunity }}</p>
+        <p class="fine">Cadence's own analysis of your bio. It is not an X score and X does not rank bios this way.</p>
+      </div>
+
+      {% if result.content_match or result.insight %}
+      <p class="panel-title">What your content says</p>
+      <div class="score">
+        {% if result.content_match %}<p><span class="pill match-{{ result.content_match.verdict }}">{% if result.content_match.verdict == 'matches' %}Bio matches your posts{% elif result.content_match.verdict == 'partial' %}Bio partly matches your posts{% else %}Bio doesn't match your posts{% endif %}</span></p><p class="why">{{ result.content_match.note }}</p>{% endif %}
+        {% if result.insight %}
+          {% if result.insight.topics %}<p class="chips">{% for t in result.insight.topics %}<span class="chip-s">{{ t }}</span>{% endfor %}</p>{% endif %}
+          <dl class="read">
+            {% if result.insight.expertise %}<dt>Apparent expertise</dt><dd>{{ result.insight.expertise }}</dd>{% endif %}
+            {% if result.insight.different %}<dt>What makes you different</dt><dd>{{ result.insight.different }}</dd>{% endif %}
+            {% if result.insight.style %}<dt>Your writing style</dt><dd>{{ result.insight.style }}</dd>{% endif %}
+          </dl>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <p class="panel-title">Five positioning directions</p>
+      {% for v in result.versions %}
+      <div class="bv" data-direction="{{ v.label }}">
+        <div class="bv-head"><span class="bv-num">{{ v.number }}</span><b>{{ v.label }}</b></div>
+        <p class="bv-best">{{ v.best_for }}</p>
+        <textarea class="rp-text bv-text" rows="3" aria-label="{{ v.label }} bio">{{ v.bio }}</textarea>
+        <div class="rp-meta"><span class="count{% if v.over %} over{% endif %}">{{ v.length }}/160</span></div>
+        <p class="why bv-why"><b>Why it works:</b> <span>{{ v.why }}</span></p>
+        <div class="actions">
+          <button type="button" class="btn sm primary bv-use">Use this</button>
+          <button type="button" class="btn sm bv-act" data-action="sharper">Make it sharper</button>
+          <button type="button" class="btn sm bv-act" data-action="human">Make it more human</button>
+          <button type="button" class="btn sm bv-act" data-action="specific">Make it more specific</button>
+          <button type="button" class="btn sm bv-act" data-action="shorter">Make it shorter</button>
+          <button type="button" class="btn sm bv-act" data-action="hook">Give me a stronger hook</button>
+          <button type="button" class="btn sm bv-act" data-action="direction">Try another direction</button>
+        </div>
+      </div>
+      {% endfor %}
+      {% if result.notes %}<p class="why"><b>Tip:</b> {{ result.notes }}</p>{% endif %}
+      {{ regen|json_script:"bioCtx" }}
+      <input type="hidden" id="bioActUrl" value="{% url 'bio_refine' %}">
+    {% else %}
+      <p class="panel-title">Your positioning</p>
+      <p class="why">You'll get a bio score, a check against what you actually post about, and five different positioning directions you can edit and refine.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
