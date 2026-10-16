@@ -112,6 +112,7 @@ def voice_context(profile):
 
 # ---------- reply helper ----------
 INTENTS = [
+    ("auto", "Let Cadence choose", "Picks the best purpose for your current strategy."),
     ("insight", "Add insight", "Add something useful the post does not say yet."),
     ("connect", "Build a connection", "Warm and personal. Make the author feel seen."),
     ("question", "Ask a thoughtful question", "A sharp question that invites a real answer."),
@@ -121,7 +122,16 @@ INTENTS = [
 ]
 INTENT_LABELS = {k: label for k, label, _ in INTENTS}
 INTENT_HELP = {k: h for k, _, h in INTENTS}
-DEFAULT_INTENT = "insight"
+DEFAULT_INTENT = "auto"
+
+PURPOSES = {
+    "awareness": "Build awareness",
+    "trust": "Build trust",
+    "relationship": "Build a relationship",
+    "demand": "Create demand",
+}
+FIT_LABELS = {"strong": "Strong fit", "partial": "Partial fit", "skip": "Skip this one"}
+CHECKS = [("audience", "Audience"), ("topic", "Topic"), ("goal", "Goal"), ("credibility", "You can add value")]
 
 VOICES = [("my_voice", "My voice"), ("refined", "My voice, refined")]
 LENGTHS = [("short", "Short", 140), ("balanced", "Balanced", 220), ("detailed", "Detailed", 280)]

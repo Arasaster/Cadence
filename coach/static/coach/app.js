@@ -119,12 +119,55 @@
     }));
   }
 
-  // ----- Reply helper -----
-  const fetchBtn = $("#fetchBtn");
-  if (fetchBtn) {
-    const status = $("#fetchStatus"), linkEl = $("#id_link");
-    const force = $("#id_force");
+  // ----- Reply helper: one tap. Paste, read, fit check, write. -----
+  const rf = $("#replyForm");
+  const mobile = () => window.matchMedia("(max-width: 960px)").matches;
+
+  function initCards(root) {
+    $$(".rp", root).forEach((card) => {
+      const ta = $(".rp-text", card), cnt = $(".count", card), pill = $(".appr", card), angle = $(".rp-angle", card);
+      const recount = () => { cnt.textContent = ta.value.length + "/280"; cnt.classList.toggle("over", ta.value.length > 280); };
+      ta.addEventListener("input", () => { recount(); autosize(ta); });
+      autosize(ta);
+      $(".rp-edit", card).addEventListener("click", () => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+      $(".rp-copy", card).addEventListener("click", (e) => copyText(ta.value, e.currentTarget));
+      $$(".rp-act", card).forEach((b) => b.addEventListener("click", async () => {
+        const menu = b.closest("details.more");
+        if (menu) menu.open = false;
+        const trigger = $(".more > summary", card);
+        const original = trigger.textContent;
+        trigger.textContent = "Working...";
+        try {
+          const base = JSON.parse($("#replyCtx").textContent);
+          const d = await postJSON($("#replyActUrl").value, {
+            mode: b.dataset.mode, ctx: base.ctx, settings: base.settings, strategy: base.strategy, current: ta.value,
+            approach: pill.textContent, used: $$(".rp .appr").map((p) => p.textContent),
+          });
+          if (d.ok) { ta.value = d.text; pill.textContent = d.approach; angle.textContent = d.angle; recount(); autosize(ta); trigger.textContent = original; }
+          else { trigger.textContent = (d.error || "Failed").slice(0, 40); await new Promise((r) => setTimeout(r, 2200)); trigger.textContent = original; }
+        } catch (e) { trigger.textContent = "Failed"; await new Promise((r) => setTimeout(r, 1800)); trigger.textContent = original; }
+      }));
+    });
+  }
+  // close an open "More" menu when tapping elsewhere
+  document.addEventListener("click", (e) => $$("details.more[open]").forEach((d) => { if (!d.contains(e.target)) d.open = false; }));
+
+  if (rf) {
+    const linkEl = $("#id_link"), status = $("#fetchStatus"), results = $("#results");
+    const fitSlot = $("#fitSlot"), cardsSlot = $("#cardsSlot"), idle = $("#idleMsg"), prog = $("#progress"), err = $("#runError");
+    const force = $("#id_force"), textEl = $("#id_post_text");
     if (force) force.value = "False"; // never carry "reply anyway" into the next request
+    const LINK = /(?:x|twitter)\.com\/\w{1,15}\/status\/\d{5,}/i;
+    let running = false, lastLink = "", lastAnalysis = null, overrideLink = null;
+
+    const order = ["read", "fit", "write"];
+    function showProgress(stage) {
+      prog.hidden = false;
+      const at = order.indexOf(stage);
+      $$("li", prog).forEach((li, i) => { li.className = i < at ? "done" : i === at ? "active" : ""; });
+    }
+    const hideProgress = () => { prog.hidden = true; };
+    function showError(msg) { err.textContent = msg; err.hidden = false; hideProgress(); }
 
     function showPreview(d) {
       const bits = [d.likes != null && d.likes + " likes", d.replies != null && d.replies + " replies"].filter(Boolean).join(" · ");
@@ -133,68 +176,94 @@
       $("#pvText").textContent = d.text.length > 300 ? d.text.slice(0, 300) + "..." : d.text;
       $("#preview").hidden = false;
       $("#id_post_meta").value = bits;
-      $("#postEdit").open = false;
     }
-    async function doFetch() {
+
+    // Read the post: fetch from the link unless we already have this link's text
+    async function readPost() {
       const link = linkEl.value.trim();
-      if (!link) { status.textContent = "Paste a post link first."; return; }
-      fetchBtn.disabled = true; status.textContent = "Fetching...";
-      try {
-        const body = new FormData(); body.append("link", link);
-        const d = await (await post(fetchBtn.dataset.url, body)).json();
-        if (d.ok) {
-          $("#id_post_text").value = d.text;
-          $("#id_author").value = d.author;
-          $("#id_author_bio").value = d.author_bio;
-          showPreview(d);
-          status.textContent = "Got it. Check the preview, pick what you want the reply to do, then continue.";
-        } else { status.textContent = d.error; $("#postEdit").open = true; }
-      } catch (e) { status.textContent = "Could not fetch. Paste the post text instead."; $("#postEdit").open = true; }
-      fetchBtn.disabled = false;
+      if (link && (link !== lastLink || !textEl.value.trim())) {
+        status.textContent = "Fetching the post...";
+        try {
+          const body = new FormData(); body.append("link", link);
+          const d = await (await post(rf.dataset.fetchUrl, body)).json();
+          if (d.ok) {
+            textEl.value = d.text; $("#id_author").value = d.author; $("#id_author_bio").value = d.author_bio;
+            showPreview(d); lastLink = link;
+            status.textContent = "Got the post.";
+          } else {
+            status.textContent = d.error;
+            if (!textEl.value.trim()) { $("#customize").open = true; $("#postEdit").open = true; return false; }
+          }
+        } catch (e) {
+          status.textContent = "Could not fetch. Paste the post text under Customize.";
+          if (!textEl.value.trim()) { $("#customize").open = true; $("#postEdit").open = true; return false; }
+        }
+      }
+      if (!textEl.value.trim()) { status.textContent = "Paste a post link first."; return false; }
+      return true;
     }
-    fetchBtn.addEventListener("click", doFetch);
+
+    async function writeStep(a, override) {
+      showProgress("write");
+      const w = await postJSON(rf.dataset.writeUrl, { ctx: a.ctx, settings: a.settings, analysis: a.analysis, override: !!override });
+      if (!w.ok) { showError(w.error); return; }
+      cardsSlot.innerHTML = w.html; initCards(cardsSlot); hideProgress();
+      // phones: bring the verdict and the first reply into view together, no hunting
+      if (mobile()) setTimeout(() => (fitSlot.firstElementChild || cardsSlot).scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+    }
+
+    function bindForce() {
+      const fb = $("#forceBtn", fitSlot);
+      if (fb) fb.addEventListener("click", async () => {
+        if (running) return;
+        fb.closest(".nothing").hidden = true;
+        overrideLink = linkEl.value.trim() || "(text)";
+        if (lastAnalysis) {
+          running = true; err.hidden = true;
+          try { await writeStep(lastAnalysis, true); } catch (e) { showError("Something went wrong. Try again."); }
+          running = false;
+        } else { run({ override: true }); }
+      });
+    }
+
+    async function run(opts) {
+      // once you chose "Reply anyway" for a post, later rewrites of that same post keep that choice
+      const same = overrideLink !== null && (linkEl.value.trim() || "(text)") === overrideLink;
+      const override = !!(opts && opts.override) || same;
+      if (override) overrideLink = linkEl.value.trim() || "(text)";
+      if (running) return;
+      running = true; err.hidden = true; idle.hidden = true; fitSlot.innerHTML = ""; cardsSlot.innerHTML = ""; lastAnalysis = null;
+      if (mobile()) results.scrollIntoView({ behavior: "smooth", block: "start" });
+      try {
+        showProgress("read");
+        if (!(await readPost())) { hideProgress(); idle.hidden = false; return; }
+        showProgress("fit");
+        const a = await (await post(rf.dataset.analyseUrl, new FormData(rf))).json();
+        if (!a.ok) { showError(a.error); return; }
+        lastAnalysis = a; fitSlot.innerHTML = a.html; bindForce();
+        if (a.verdict === "skip" && !override) { hideProgress(); return; }
+        await writeStep(a, override);
+      } catch (e) { showError("Something went wrong. Check your connection and try again."); }
+      finally { running = false; }
+    }
+
+    // triggers: paste into the box, tap the clipboard icon, Go, Enter, or the customize button
+    linkEl.addEventListener("paste", () => setTimeout(() => { if (LINK.test(linkEl.value)) run(); }, 0));
+    linkEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); run(); } });
+    $("#goBtn").addEventListener("click", () => run());
+    rf.addEventListener("submit", (e) => { e.preventDefault(); run(); });
     const pasteBtn = $("#pasteBtn");
     if (pasteBtn) pasteBtn.addEventListener("click", async () => {
       try {
         const text = (await navigator.clipboard.readText()).trim();
         if (!text) { status.textContent = "Your clipboard is empty."; return; }
-        linkEl.value = text;
-        doFetch();
-      } catch (e) { status.textContent = "Could not read the clipboard. Click the box and press Ctrl+V instead."; }
+        linkEl.value = text; run();
+      } catch (e) { status.textContent = "Could not read the clipboard. Click the box and paste with Ctrl+V or long-press."; }
     });
-    const forceBtn = $("#forceBtn");
-    if (forceBtn) forceBtn.addEventListener("click", () => { force.value = "True"; $("#replyForm").requestSubmit(); });
-  }
 
-  const replyCtx = $("#replyCtx"), replyUrl = $("#replyActUrl");
-  if (replyCtx && replyUrl) {
-    const base = JSON.parse(replyCtx.textContent);
-    const approaches = () => $$(".rp .appr").map((p) => p.textContent);
-    $$(".rp").forEach((card) => {
-      const ta = $(".rp-text", card), cnt = $(".count", card), pill = $(".appr", card), angle = $(".rp-angle", card);
-      const recount = () => { cnt.textContent = ta.value.length + "/280"; cnt.classList.toggle("over", ta.value.length > 280); };
-      ta.addEventListener("input", () => { recount(); autosize(ta); });
-      autosize(ta);
-      $(".rp-edit", card).addEventListener("click", () => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
-      $(".rp-copy", card).addEventListener("click", (e) => copyText(ta.value, e.currentTarget));
-      $$(".rp-act", card).forEach((b) => b.addEventListener("click", async () => {
-        const original = b.textContent;
-        $$(".rp-act", card).forEach((x) => (x.disabled = true));
-        b.textContent = "Working...";
-        try {
-          const d = await postJSON(replyUrl.value, {
-            mode: b.dataset.mode, ctx: base.ctx, settings: base.settings, current: ta.value,
-            approach: pill.textContent, used: approaches(),
-          });
-          if (d.ok) {
-            ta.value = d.text; pill.textContent = d.approach; angle.textContent = d.angle;
-            recount(); autosize(ta);
-          } else { b.textContent = (d.error || "Failed").slice(0, 40); await new Promise((r) => setTimeout(r, 2200)); }
-        } catch (e) { b.textContent = "Failed"; await new Promise((r) => setTimeout(r, 1800)); }
-        b.textContent = original;
-        $$(".rp-act", card).forEach((x) => (x.disabled = false));
-      }));
-    });
+    // page loaded with server-rendered results (JavaScript fallback path)
+    initCards(document);
+    bindForce();
   }
 
   // ----- Bio positioning -----

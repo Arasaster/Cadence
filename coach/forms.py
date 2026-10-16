@@ -111,7 +111,10 @@ class ProfileForm(forms.ModelForm):
 
 
 class ReplyForm(forms.Form):
-    link = forms.CharField(label="Post link", required=False, max_length=300)
+    link = forms.CharField(
+        label="Post link", required=False, max_length=300,
+        widget=forms.TextInput(attrs={"placeholder": "Paste an X post link", "inputmode": "url", "autocomplete": "off"}),
+    )
     post_text = forms.CharField(
         label="Post text", required=False, widget=forms.Textarea(attrs={"rows": 4}), max_length=1500,
         help_text="Filled in when you fetch a link. You can also paste it.",

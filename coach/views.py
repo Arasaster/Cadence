@@ -11,6 +11,7 @@ from django.core.management import call_command
 from django.db.models import F
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -310,44 +311,94 @@ def bio_refine(request):
 
 # ---------- replies ----------
 
+CTX_KEYS = ("link", "post_text", "author", "author_bio", "top_replies", "post_meta")
+
+
 def _reply_ctx(form):
     d = form.cleaned_data
-    return {k: d.get(k, "") for k in ("link", "post_text", "author", "author_bio", "top_replies", "post_meta")}
+    return {k: d.get(k, "") for k in CTX_KEYS}
+
+
+def _clean_ctx(raw):
+    return {k: str(_d(raw).get(k, ""))[:1500] for k in CTX_KEYS}
+
+
+def _d(v):
+    return v if isinstance(v, dict) else {}
+
+
+def _clean_settings(raw):
+    raw = _d(raw)
+    return {
+        "intent": raw.get("intent") if raw.get("intent") in INTENT_LABELS else "auto",
+        "voice": raw.get("voice") if raw.get("voice") in ("my_voice", "refined") else "my_voice",
+        "length": raw.get("length") if raw.get("length") in LENGTH_MAX else "balanced",
+        "instruction": str(raw.get("instruction", ""))[:160],
+        "sliders": {k: max(0, min(100, int(_d(raw.get("sliders")).get(k, 50)))) for k, _, _ in SLIDERS},
+    }
+
+
+def _prepare_reply(form):
+    """Read the post. If only a link was given, fetch it. Returns (ctx, error)."""
+    ctx = _reply_ctx(form)
+    if ctx["post_text"]:
+        return ctx, None
+    try:
+        post = fxtwitter.fetch_post(ctx["link"])
+    except fxtwitter.FetchError as exc:
+        return ctx, str(exc)
+    bits = [f"{post[k]} {label}" for k, label in (("likes", "likes"), ("replies", "replies")) if post.get(k) is not None]
+    ctx.update(post_text=post["text"], author=ctx["author"] or post["author"],
+               author_bio=ctx["author_bio"] or post["author_bio"], post_meta=" · ".join(bits))
+    return ctx, None
+
+
+def _roadmap_for(user, profile):
+    return _roadmap_ctx(_active_roadmap(user), profile.today())
+
+
+def _form_error(form):
+    for errs in form.errors.values():
+        return errs[0]
+    return "Check the form and try again."
+
+
+def _regen(ctx, settings_, analysis):
+    return {"ctx": ctx, "settings": settings_, "strategy": analysis["strategy"]}
 
 
 @login_required
 def replies(request):
+    """Full-page path: also the fallback when JavaScript is off. The browser normally runs the same steps live."""
     profile = _profile(request.user)
     if not profile:
         return redirect("onboarding")
     stats = _stats(request.user)
     form = ReplyForm(request.POST or None)
-    out = regen = None
+    an = written = regen = None
+    override = False
     if request.method == "POST" and form.is_valid():
-        ctx = _reply_ctx(form)
-        error = None
-        if not ctx["post_text"]:  # link only: read the post for them
-            try:
-                post = fxtwitter.fetch_post(ctx["link"])
-                bits = [f"{post[k]} {label}" for k, label in (("likes", "likes"), ("replies", "replies")) if post.get(k) is not None]
-                ctx.update(post_text=post["text"], author=ctx["author"] or post["author"],
-                           author_bio=ctx["author_bio"] or post["author_bio"], post_meta=" · ".join(bits))
-            except fxtwitter.FetchError as exc:
-                error = str(exc)
+        ctx, error = _prepare_reply(form)
         if error:
             messages.error(request, error)
         else:
             settings_ = form.settings()
+            override = form.cleaned_data["force"]
             try:
                 _charge(request.user)
-                out = ai.reply_session(profile, ctx, settings_, stats, force=form.cleaned_data["force"])
+                an = ai.reply_analyse(profile, ctx, settings_, stats, _roadmap_for(request.user, profile))
+                if an["fit"]["verdict"] != "skip" or override:
+                    _charge(request.user)
+                    written = ai.reply_write(profile, ctx, settings_, an, stats, override)
+                    an = written["analysis"]
             except ai.AIError as exc:
                 messages.error(request, str(exc))
+                an = written = None
             else:
-                regen = {"ctx": ctx, "settings": settings_}
+                regen = _regen(ctx, settings_, an)
     return render(request, "replies.html", {
-        "form": form, "out": out, "regen": regen, "intent_help": INTENT_HELP,
-        "has_examples": bool(ai.voice_examples(profile, stats)),
+        "form": form, "an": an, "written": written, "regen": regen, "override": override,
+        "intent_help": INTENT_HELP, "has_examples": bool(ai.voice_examples(profile, stats)),
     })
 
 
@@ -362,6 +413,55 @@ def reply_fetch(request):
 
 @login_required
 @require_POST
+def reply_analyse_api(request):
+    """Step 1 of the one-tap flow: read the post, check fit with the user's strategy, plan three moves."""
+    profile = _profile(request.user)
+    if not profile:
+        return JsonResponse({"ok": False, "error": "Finish setup first."})
+    form = ReplyForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({"ok": False, "error": _form_error(form)})
+    ctx, error = _prepare_reply(form)
+    if error:
+        return JsonResponse({"ok": False, "error": error})
+    settings_ = form.settings()
+    try:
+        _charge(request.user)
+        an = ai.reply_analyse(profile, ctx, settings_, _stats(request.user), _roadmap_for(request.user, profile))
+    except ai.AIError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)})
+    return JsonResponse({
+        "ok": True, "verdict": an["fit"]["verdict"], "analysis": an, "ctx": ctx, "settings": settings_,
+        "html": render_to_string("_reply_fit.html", {"an": an, "override": False}, request=request),
+    })
+
+
+@login_required
+@require_POST
+def reply_write_api(request):
+    """Step 2: write three replies that carry out the strategy."""
+    profile = _profile(request.user)
+    if not profile:
+        return JsonResponse({"ok": False, "error": "Finish setup first."})
+    try:
+        body = json.loads(request.body)
+        ctx, settings_ = _clean_ctx(body["ctx"]), _clean_settings(body["settings"])
+        analysis, override = _d(body["analysis"]), bool(body.get("override"))
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return JsonResponse({"ok": False, "error": "Bad request."}, status=400)
+    try:
+        _charge(request.user)
+        written = ai.reply_write(profile, ctx, settings_, analysis, _stats(request.user), override)
+    except ai.AIError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)})
+    return JsonResponse({
+        "ok": True,
+        "html": render_to_string("_reply_cards.html", {"written": written, "regen": _regen(ctx, settings_, written["analysis"])}, request=request),
+    })
+
+
+@login_required
+@require_POST
 def reply_one(request):
     """Rework a single reply: regenerate, try another angle, make it shorter, make it more natural."""
     profile = _profile(request.user)
@@ -372,15 +472,8 @@ def reply_one(request):
         mode = body["mode"]
         if mode not in ai.REPLY_MODES:
             raise ValueError
-        ctx = {k: str(body["ctx"].get(k, ""))[:1500] for k in ("link", "post_text", "author", "author_bio", "top_replies", "post_meta")}
-        raw = body["settings"]
-        settings_ = {
-            "intent": raw.get("intent") if raw.get("intent") in INTENT_LABELS else "insight",
-            "voice": raw.get("voice") if raw.get("voice") in ("my_voice", "refined") else "my_voice",
-            "length": raw.get("length") if raw.get("length") in LENGTH_MAX else "balanced",
-            "instruction": str(raw.get("instruction", ""))[:160],
-            "sliders": {k: max(0, min(100, int(raw.get("sliders", {}).get(k, 50)))) for k, _, _ in SLIDERS},
-        }
+        ctx, settings_ = _clean_ctx(body["ctx"]), _clean_settings(body["settings"])
+        strategy = _d(body.get("strategy")) or None
         current = str(body.get("current", ""))[:400]
         approach = str(body.get("approach", ""))[:24]
         used = [str(x)[:24] for x in body.get("used", [])][:8]
@@ -388,7 +481,7 @@ def reply_one(request):
         return JsonResponse({"ok": False, "error": "Bad request."}, status=400)
     try:
         _charge(request.user)
-        out = ai.reply_edit(profile, ctx, settings_, mode, current, approach, used, _stats(request.user))
+        out = ai.reply_edit(profile, ctx, settings_, mode, current, approach, used, _stats(request.user), strategy)
     except ai.AIError as exc:
         return JsonResponse({"ok": False, "error": str(exc)})
     return JsonResponse({"ok": True, **out})

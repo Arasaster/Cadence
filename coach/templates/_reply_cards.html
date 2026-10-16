@@ -1,0 +1,27 @@
+<p class="panel-title">Three different replies</p>
+{% for r in written.replies %}
+<div class="rp">
+  <div class="rp-head"><span class="pill appr">{{ r.approach }}</span><span class="rp-angle">{{ r.angle }}</span></div>
+  <textarea class="rp-text" rows="3" aria-label="{{ r.approach }} reply">{{ r.text }}</textarea>
+  <div class="rp-meta"><span class="count{% if r.over %} over{% endif %}">{{ r.length }}/280</span></div>
+  {% if r.media %}
+  <div class="media"><b>Add media:</b> {{ r.media.asset }}{% if r.media.why %}<small>{{ r.media.why }}</small>{% endif %}</div>
+  {% endif %}
+  <div class="actions">
+    <button type="button" class="btn sm primary rp-copy">Copy</button>
+    <button type="button" class="btn sm rp-edit">Edit</button>
+    <details class="more">
+      <summary class="btn sm">More</summary>
+      <div class="menu">
+        <button type="button" class="rp-act" data-mode="shorter">Make shorter</button>
+        <button type="button" class="rp-act" data-mode="natural">Make more natural</button>
+        <button type="button" class="rp-act" data-mode="angle">Try another angle</button>
+        <button type="button" class="rp-act" data-mode="regenerate">Regenerate</button>
+      </div>
+    </details>
+  </div>
+</div>
+{% endfor %}
+{% if written.tip %}<p class="why">{{ written.tip }}</p>{% endif %}
+{{ regen|json_script:"replyCtx" }}
+<input type="hidden" id="replyActUrl" value="{% url 'reply_one' %}">

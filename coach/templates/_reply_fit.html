@@ -1,0 +1,35 @@
+<div class="fit fit-{{ an.fit.verdict }}" id="fitCard">
+  <div class="fit-head">
+    <span class="pill fitpill">{{ an.fit.label }}</span>
+    <p class="fit-sum">{{ an.fit.summary }}</p>
+  </div>
+  {% if an.strategy.moves %}
+    <p class="purpose"><span class="pill appr">{{ an.strategy.purpose_label }}</span> {{ an.strategy.why }}</p>
+  {% endif %}
+  {% if an.fit.verdict == "skip" and not override %}
+    <div class="nothing">
+      <b>Recommendation: skip this one.</b>
+      <p>{{ an.recommendation }}</p>
+      <button type="button" class="btn" id="forceBtn">Reply anyway</button>
+    </div>
+  {% endif %}
+  <details class="why-d"{% if an.fit.verdict == "skip" %} open{% endif %}>
+    <summary>{% if an.fit.verdict == "skip" %}Why{% else %}Why this fits{% endif %} and what Cadence read</summary>
+    <ul class="checks">
+      {% for c in an.fit.rows %}
+      <li class="chk {{ c.state }}"><span class="chk-dot" aria-hidden="true"></span><span><b>{{ c.label }}</b><span class="sr"> ({{ c.state }})</span>{% if c.note %} <em>{{ c.note }}</em>{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {% if an.recommendation and an.fit.verdict != "skip" %}<p class="fit-rec">{{ an.recommendation }}</p>{% endif %}
+    <dl class="read">
+      {% if an.read.topic %}<dt>Topic</dt><dd>{{ an.read.topic }}</dd>{% endif %}
+      {% if an.read.intent %}<dt>Their intent</dt><dd>{{ an.read.intent }}</dd>{% endif %}
+      {% if an.read.argument %}<dt>Core argument</dt><dd>{{ an.read.argument }}</dd>{% endif %}
+      {% if an.read.context %}<dt>Context</dt><dd>{{ an.read.context }}</dd>{% endif %}
+    </dl>
+    {% if not an.read.has_replies %}<p class="why">No replies were pasted, so the conversation check uses the post alone. Paste a few top replies under Customize for a sharper read.</p>{% endif %}
+    {% if an.read.repeated_points %}<p class="sub-label">Already said</p><ul class="mini">{% for x in an.read.repeated_points %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    {% if an.read.gaps %}<p class="sub-label">Still missing</p><ul class="mini">{% for x in an.read.gaps %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    {% if an.read.obvious_point_taken %}<div class="note">The obvious point has already been made several times, so the replies steer away from it.</div>{% endif %}
+  </details>
+</div>

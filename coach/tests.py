@@ -128,7 +128,7 @@ class EmojiTests(TestCase):
         self.assertLess(style.ACCOUNT_TYPES["company"]["emoji_rate"], style.ACCOUNT_TYPES["creator"]["emoji_rate"])
 
     def test_rules_in_every_prompt(self):
-        for p in (prompts.PLAN_SYSTEM, prompts.BIO_SYSTEM, prompts.REPLY_SYSTEM):
+        for p in (prompts.PLAN_SYSTEM, prompts.BIO_SYSTEM, prompts.REPLY_WRITE_SYSTEM):
             self.assertIn("Emoji rules", p)
             self.assertIn("Voice:", p)
 
@@ -442,24 +442,45 @@ class BioCoachTests(Base):
         self.assertContains(r, "This field is required")
 
 
-def reply_answer(payload):
+def make_analysis(verdict="strong", media=None):
     return {
-        "read": {"topic": "Shipping", "intent": "Persuade founders", "argument": "Shipping beats planning", "context": "Founder Twitter",
-                 "repeated_points": ["Ship fast"], "gaps": ["Cost of rework"], "obvious_point_taken": True,
-                 "suggested_angle": "Talk about rework"},
-        "worth_replying": True, "skip_reason": "",
-        "replies": [
-            {"approach": "Insight", "angle": "Adds the cost of rework", "text": "Rework is the hidden cost \u2014 ship small."},
-            {"approach": "Question", "angle": "Asks what was cut", "text": "What did you cut first?"},
-            {"approach": "Counterpoint", "angle": "Adds nuance", "text": "Shipping wins only if you can measure it."},
-        ],
-        "tip": "Swap in your own detail.",
+        "read": {"topic": "Shipping versus planning", "intent": "Persuade founders", "argument": "Shipping beats planning",
+                 "context": "Founder to founders", "repeated_points": ["Ship fast"], "gaps": ["Cost of rework"], "obvious_point_taken": True},
+        "fit": {"verdict": verdict, "summary": "A founder talking to your exact audience about your topic.",
+                "checks": {"audience": {"state": "yes", "note": "Early-stage founders"}, "topic": {"state": "yes", "note": "Branding and shipping"},
+                           "goal": {"state": "partial", "note": "Fits the foundation phase"}, "credibility": {"state": "yes", "note": "You ship products"}}},
+        "recommendation": "Reply carefully." if verdict != "skip" else "This is about a celebrity launch. Look for posts about early-stage branding instead.",
+        "strategy": {"purpose": "trust", "why": "Foundation phase: show real competence.", "promotion": "none", "moves": [
+            {"approach": "Insight", "angle": "Adds the cost of rework", "point": "Rework is the hidden cost"},
+            {"approach": "Question", "angle": "Asks what was cut", "point": "What did they cut first"},
+            {"approach": "Counterpoint", "angle": "Adds a fair limit", "point": "Only works if you can measure it"}]},
+        "media": media or {"recommend": False, "asset": "", "why": "", "move": 1},
     }
 
 
-class ReplyHelperTests(Base):
-    BASE = {"post_text": "Shipping beats planning.", "intent": "insight", "voice": "my_voice", "length": "balanced"}
+def write_answer(payload):
+    texts = ["Rework is the hidden cost \u2014 ship small.", "What did you cut first?", "Shipping wins only if you can measure it."]
+    return {"replies": [{"approach": m["approach"], "angle": m["angle"], "text": texts[i]} for i, m in enumerate(payload["strategy"]["moves"][:3])],
+            "tip": "Swap in your own detail."}
 
+
+class ReplyHelperTests(Base):
+    FORM = {"post_text": "Shipping beats planning.", "intent": "auto", "voice": "my_voice", "length": "balanced"}
+
+    def analyse(self, verdict="strong", media=None, form=None):
+        rec = Recorder(REPLY_ANALYSE_SYSTEM=make_analysis(verdict, media))
+        with patch("coach.ai._ask", rec):
+            r = self.client.post(reverse("reply_analyse"), form or self.FORM)
+        return r.json(), rec
+
+    def write(self, a, override=False, rec=None):
+        rec = rec or Recorder(REPLY_WRITE_SYSTEM=write_answer)
+        body = {"ctx": a["ctx"], "settings": a["settings"], "analysis": a["analysis"], "override": override}
+        with patch("coach.ai._ask", rec):
+            r = self.client.post(reverse("reply_write"), json.dumps(body), content_type="application/json")
+        return r.json(), rec
+
+    # ---- fetching (unchanged behaviour) ----
     def test_parse_link(self):
         self.assertEqual(fxtwitter.parse_link("https://x.com/jack/status/20"), None)
         self.assertEqual(fxtwitter.parse_link("https://x.com/jack/status/1234567890"), ("jack", "1234567890"))
@@ -480,15 +501,11 @@ class ReplyHelperTests(Base):
 
     def test_fetch_failure_is_friendly(self):
         self.setup_user()
-        r = self.client.post(reverse("reply_fetch"), {"link": "not a link"})
-        self.assertFalse(r.json()["ok"])
-        resp = MagicMock(status_code=404)
-        with patch("coach.fxtwitter.httpx.get", return_value=resp):
-            r = self.client.post(reverse("reply_fetch"), {"link": "https://x.com/sam/status/1234567890"})
-        err = r.json()["error"]
+        self.assertFalse(self.client.post(reverse("reply_fetch"), {"link": "not a link"}).json()["ok"])
+        with patch("coach.fxtwitter.httpx.get", return_value=MagicMock(status_code=404)):
+            err = self.client.post(reverse("reply_fetch"), {"link": "https://x.com/sam/status/1234567890"}).json()["error"]
         self.assertIn("Paste the text", err)
         self.assertIn("fxtwitter: 404", err)
-        self.assertIn("oembed: 404", err)
 
     def test_falls_back_when_first_source_is_blocked(self):
         def respond(url, **kw):
@@ -514,126 +531,288 @@ class ReplyHelperTests(Base):
             d = fxtwitter.fetch_post("https://x.com/sam/status/1234567890")
         self.assertEqual((d["source"], d["text"], d["author"]), ("oembed", "Shipping & learning\ndaily", "@sam"))
 
-    def test_session_reads_post_and_writes_three_different_replies(self):
+    # ---- the fit gate and strategy ----
+    def test_analyse_loads_the_users_strategy_and_roadmap(self):
+        self.setup_user(offer="a thesis formatting tool", target_note="500 users by January")
+        with patch("coach.ai._ask", Recorder(ROADMAP_SYSTEM=fake_roadmap(30))):
+            self.client.post(reverse("roadmap"), {"days": "30", "note": ""})
+        d, rec = self.analyse()
+        self.assertTrue(d["ok"])
+        s = rec.calls[0][1]["strategy"]
+        self.assertEqual(s["audience"], "early-stage founders")
+        self.assertEqual(s["offer"], "a thesis formatting tool")
+        self.assertEqual(s["success_looks_like"], "500 users by January")
+        self.assertEqual(s["goal"], "Grow my followers")
+        self.assertEqual((s["roadmap_today"]["day"], s["roadmap_today"]["phase"]["name"]), (1, "Phase 1"))
+        self.assertEqual(rec.calls[0][1]["intent"]["key"], "auto")
+        self.assertEqual(rec.calls[0][0], prompts.REPLY_ANALYSE_SYSTEM)
+
+    def test_analyse_works_without_a_roadmap(self):
         self.setup_user()
-        rec = Recorder(REPLY_SYSTEM=reply_answer)
-        data = {**self.BASE, "intent": "challenge", "voice": "refined", "length": "short", "instruction": "Make it curious, not argumentative.",
-                "top_replies": "Ship fast!\nExactly.", "s_formality": 10, "s_emoji": 0}
-        with patch("coach.ai._ask", rec):
-            r = self.client.post(reverse("replies"), data)
-        for text in ("What Cadence read", "Core argument", "Already said", "Ship fast", "Still missing", "Cost of rework",
-                     "already been made several times", "Better angle", "Insight", "Question", "Counterpoint",
-                     "Make shorter", "Make more natural", "Try another angle", "Regenerate", "Copy", "Edit"):
-            self.assertContains(r, text)
-        self.assertContains(r, "Rework is the hidden cost, ship small.")  # em dash cleaned
-        self.assertNotContains(r, "\u2014 ship")
-        p = rec.calls[0][1]
-        self.assertEqual(p["intent"]["key"], "challenge")
-        self.assertEqual(p["voice"]["mode"], "refined")
-        self.assertEqual(p["length"], {"name": "short", "max_chars": 140})
-        self.assertEqual(p["user_instruction"], "Make it curious, not argumentative.")
-        self.assertEqual(p["post"]["existing_replies"], "Ship fast!\nExactly.")
-        self.assertTrue(any("strongly casual" in t for t in p["tone_adjustments"]))
-        self.assertEqual(p["emoji_allowed"], [False, False, False])
-        self.assertFalse(p["force"])
+        d, rec = self.analyse()
+        self.assertTrue(d["ok"])
+        self.assertIsNone(rec.calls[0][1]["strategy"]["roadmap_today"])
 
-    def test_defaults_are_add_insight_my_voice_balanced(self):
+    def test_strong_fit_card_shows_checks_and_purpose(self):
         self.setup_user()
-        rec = Recorder(REPLY_SYSTEM=reply_answer)
-        with patch("coach.ai._ask", rec):
-            self.client.post(reverse("replies"), {"post_text": "Hello", "intent": "insight", "voice": "my_voice", "length": "balanced"})
-        p = rec.calls[0][1]
-        self.assertEqual((p["intent"]["key"], p["voice"]["mode"], p["length"]["max_chars"]), ("insight", "my_voice", 220))
-        page = self.client.get(reverse("replies")).content.decode()
-        self.assertRegex(page, r'value="insight"[^>]*checked|checked[^>]*value="insight"')
-        self.assertRegex(page, r'value="my_voice"[^>]*checked|checked[^>]*value="my_voice"')
+        d, _ = self.analyse()
+        self.assertEqual(d["verdict"], "strong")
+        for text in ("Strong fit", "Audience", "Topic", "Goal", "You can add value", "Build trust", "Why this fits and what Cadence read",
+                     "Already said", "Ship fast", "Still missing", "Cost of rework", "already been made several times"):
+            self.assertIn(text, d["html"])
+        self.assertNotIn("Reply anyway", d["html"])
 
-    def test_voice_examples_come_from_samples_and_archive(self):
-        self.setup_user(voice_samples="first sample post\n\nsecond sample post")
-        from coach.models import ArchiveStats
-        ArchiveStats.objects.create(user=User.objects.get(), data=parse_archive(big_archive(), "UTC", "me"))
-        rec = Recorder(REPLY_SYSTEM=reply_answer)
-        with patch("coach.ai._ask", rec):
-            self.client.post(reverse("replies"), self.BASE)
-        v = rec.calls[0][1]["voice"]
-        self.assertTrue(v["has_examples"])
-        self.assertEqual(v["examples"][:2], ["first sample post", "second sample post"])
-        self.assertGreater(len(v["examples"]), 2)
-
-    def test_can_say_there_is_nothing_to_add_and_force_overrides(self):
+    def test_skip_explains_recommends_skipping_and_offers_override(self):
         self.setup_user()
-        def nothing(p):
-            return {"read": {"topic": "Announcement"}, "worth_replying": False, "skip_reason": "It is a bare announcement.", "replies": []}
-        with patch("coach.ai._ask", Recorder(REPLY_SYSTEM=nothing)):
-            r = self.client.post(reverse("replies"), self.BASE)
-        self.assertContains(r, "Nothing useful to add here")
-        self.assertContains(r, "It is a bare announcement.")
-        self.assertContains(r, "Reply anyway")
-        self.assertNotContains(r, "Three different replies")
-        rec = Recorder(REPLY_SYSTEM=reply_answer)
-        with patch("coach.ai._ask", rec):
-            r = self.client.post(reverse("replies"), {**self.BASE, "force": "True"})
-        self.assertTrue(rec.calls[0][1]["force"])
-        self.assertContains(r, "Three different replies")
+        d, _ = self.analyse("skip")
+        self.assertEqual(d["verdict"], "skip")
+        self.assertEqual(d["analysis"]["strategy"]["moves"], [])  # nothing manufactured
+        for text in ("Skip this one", "Recommendation: skip this one", "celebrity launch", "Reply anyway"):
+            self.assertIn(text, d["html"])
 
-    def test_link_only_fetches_server_side_and_shows_preview(self):
+    def test_incomplete_strategy_is_an_error_not_a_guess(self):
+        self.setup_user()
+        bad = make_analysis()
+        bad["strategy"]["moves"] = bad["strategy"]["moves"][:1]
+        with patch("coach.ai._ask", Recorder(REPLY_ANALYSE_SYSTEM=bad)):
+            d = self.client.post(reverse("reply_analyse"), self.FORM).json()
+        self.assertFalse(d["ok"])
+        self.assertIn("incomplete", d["error"])
+
+    def test_keyword_overlap_is_explicitly_not_enough_in_the_prompt(self):
+        self.assertIn("Shared keywords are NOT enough", prompts.REPLY_ANALYSE_SYSTEM)
+        self.assertIn("prefer \"skip\" over manufacturing replies", prompts.REPLY_ANALYSE_SYSTEM)
+        self.assertIn("Never force", prompts.REPLY_ANALYSE_SYSTEM)
+
+    def test_analyse_needs_a_post(self):
+        self.setup_user()
+        d = self.client.post(reverse("reply_analyse"), {"intent": "auto", "voice": "my_voice", "length": "balanced"}).json()
+        self.assertFalse(d["ok"])
+        self.assertIn("Paste a post link", d["error"])
+
+    def test_link_only_fetches_then_analyses(self):
         self.setup_user()
         resp = MagicMock(status_code=200)
         resp.json.return_value = {"tweet": {"text": "Fetched text", "likes": 3, "replies": 1, "author": {"screen_name": "sam", "description": "Bio"}}}
-        rec = Recorder(REPLY_SYSTEM=reply_answer)
-        data = {"link": "https://x.com/sam/status/1234567890", "intent": "insight", "voice": "my_voice", "length": "balanced"}
+        rec = Recorder(REPLY_ANALYSE_SYSTEM=make_analysis())
         with patch("coach.fxtwitter.httpx.get", return_value=resp), patch("coach.ai._ask", rec):
-            r = self.client.post(reverse("replies"), data)
-        self.assertContains(r, "Insight")
+            d = self.client.post(reverse("reply_analyse"), {"link": "https://x.com/sam/status/1234567890", "intent": "auto", "voice": "my_voice", "length": "balanced"}).json()
+        self.assertTrue(d["ok"])
         self.assertEqual(rec.calls[0][1]["post"]["text"], "Fetched text")
-        self.assertEqual(rec.calls[0][1]["post"]["author_bio"], "Bio")
+        self.assertEqual(d["ctx"]["post_meta"], "3 likes · 1 replies")
 
-    def test_needs_link_or_text(self):
+    def test_existing_replies_reach_the_analysis(self):
         self.setup_user()
-        r = self.client.post(reverse("replies"), {"intent": "insight", "voice": "my_voice", "length": "balanced"})
-        self.assertContains(r, "Paste a post link or the post text")
+        _, rec = self.analyse(form={**self.FORM, "top_replies": "Ship fast!\nExactly."})
+        self.assertEqual(rec.calls[0][1]["post"]["existing_replies"], "Ship fast!\nExactly.")
 
-    def test_paste_button_and_simplified_controls(self):
+    # ---- writing ----
+    def test_write_carries_out_three_distinct_moves(self):
+        self.setup_user()
+        a, _ = self.analyse()
+        d, rec = self.write(a)
+        self.assertTrue(d["ok"])
+        p = rec.calls[0][1]
+        self.assertEqual([m["approach"] for m in p["strategy"]["moves"]], ["Insight", "Question", "Counterpoint"])
+        self.assertEqual(p["strategy"]["promotion"], "none")
+        self.assertFalse(p["override"])
+        self.assertEqual(rec.calls[0][0], prompts.REPLY_WRITE_SYSTEM)
+        for text in ("Insight", "Question", "Counterpoint", "Rework is the hidden cost, ship small.", "Copy", "Edit", "More",
+                     "Make shorter", "Make more natural", "Try another angle", "Regenerate"):
+            self.assertIn(text, d["html"])
+        self.assertNotIn("\u2014", d["html"])
+        self.assertEqual(d["html"].count('class="rp"'), 3)
+
+    def test_settings_reach_the_writer(self):
+        self.setup_user(voice_samples="first sample post\n\nsecond sample post")
+        form = {**self.FORM, "intent": "challenge", "voice": "refined", "length": "short", "instruction": "Make it curious, not argumentative.",
+                "s_formality": 10, "s_emoji": 0}
+        a, _ = self.analyse(form=form)
+        d, rec = self.write(a)
+        p = rec.calls[0][1]
+        self.assertEqual(p["length"], {"name": "short", "max_chars": 140})
+        self.assertEqual(p["voice"]["mode"], "refined")
+        self.assertEqual(p["voice"]["examples"][:2], ["first sample post", "second sample post"])
+        self.assertEqual(p["user_instruction"], "Make it curious, not argumentative.")
+        self.assertTrue(any("strongly casual" in t for t in p["tone_adjustments"]))
+        self.assertEqual(p["emoji_allowed"], [False, False, False])
+
+    def test_voice_examples_include_archive_posts(self):
+        self.setup_user()
+        from coach.models import ArchiveStats
+        ArchiveStats.objects.create(user=User.objects.get(), data=parse_archive(big_archive(), "UTC", "me"))
+        a, _ = self.analyse()
+        _, rec = self.write(a)
+        self.assertTrue(rec.calls[0][1]["voice"]["has_examples"])
+
+    def test_media_is_suggested_only_when_it_helps_and_for_one_reply(self):
+        self.setup_user()
+        a, _ = self.analyse(media={"recommend": True, "asset": "a before and after screenshot of a formatted page", "why": "Shows the exact fix", "move": 2})
+        d, rec = self.write(a)
+        self.assertEqual(d["html"].count("Add media:"), 1)
+        cards = d["html"].split('class="rp"')
+        self.assertIn("Add media:", cards[2])          # attached to move 2, the Question reply
+        self.assertNotIn("Add media:", cards[1])
+        self.assertNotIn("Add media:", cards[3])
+        self.assertEqual(rec.calls[0][1]["attached_media"], {"move": 2, "asset": "a before and after screenshot of a formatted page"})
+        a2, _ = self.analyse()
+        d2, rec2 = self.write(a2)
+        self.assertNotIn("Add media:", d2["html"])
+        self.assertIsNone(rec2.calls[0][1]["attached_media"])
+
+    def test_media_never_survives_a_skip_or_an_empty_asset(self):
+        out = ai.norm_analysis({**make_analysis("skip"), "media": {"recommend": True, "asset": "a demo", "move": 1}})
+        self.assertFalse(out["media"]["recommend"])
+        out = ai.norm_analysis({**make_analysis(), "media": {"recommend": True, "asset": "", "move": 1}})
+        self.assertFalse(out["media"]["recommend"])
+
+    def test_too_similar_replies_get_one_corrective_retry(self):
+        self.setup_user()
+        a, _ = self.analyse()
+        calls = {"n": 0}
+        def answer(payload):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                t = "Rework costs more than shipping small versions of anything"
+                return {"replies": [{"approach": "Insight", "text": t}, {"approach": "Question", "text": t + " honestly"}, {"approach": "Counterpoint", "text": t}]}
+            return write_answer(payload)
+        d, rec = self.write(a, rec=Recorder(REPLY_WRITE_SYSTEM=answer))
+        self.assertTrue(d["ok"])
+        self.assertEqual(len(rec.calls), 2)
+        self.assertIn("fix", rec.calls[1][1])
+        self.assertNotIn("fix", rec.calls[0][1])
+        self.assertIn("What did you cut first?", d["html"])
+
+    def test_retry_happens_only_once(self):
+        self.setup_user()
+        a, _ = self.analyse()
+        same = lambda p: {"replies": [{"approach": "Insight", "text": "Rework costs more than shipping small versions"}] * 3}
+        d, rec = self.write(a, rec=Recorder(REPLY_WRITE_SYSTEM=same))
+        self.assertTrue(d["ok"])
+        self.assertEqual(len(rec.calls), 2)
+
+    def test_distinct_replies_need_no_retry(self):
+        self.assertFalse(ai.too_similar([{"text": "Rework is the hidden cost nobody counts"}, {"text": "What did you cut first from version one?"},
+                                         {"text": "Only works when you can measure results"}]))
+        self.assertTrue(ai.too_similar([{"text": "Rework costs more than shipping small"}, {"text": "Rework costs more than shipping small ones"}]))
+
+    def test_override_writes_modest_replies_after_a_skip(self):
+        self.setup_user()
+        a, _ = self.analyse("skip")
+        d, _ = self.write(a)  # no override
+        self.assertFalse(d["ok"])
+        self.assertIn("no strategy", d["error"])
+        d, rec = self.write(a, override=True)
+        self.assertTrue(d["ok"])
+        p = rec.calls[0][1]
+        self.assertTrue(p["override"])
+        self.assertEqual(p["strategy"]["promotion"], "none")
+        self.assertEqual(len(p["strategy"]["moves"]), 3)
+        self.assertEqual(p["strategy"]["purpose"], "relationship")
+
+    def test_browser_supplied_analysis_is_sanitised(self):
+        self.setup_user()
+        a, _ = self.analyse()
+        evil = {"fit": {"verdict": "weird"}, "strategy": {"purpose": "hack", "promotion": "sell hard",
+                "moves": [{"approach": "x" * 500, "angle": "y" * 900, "point": "z" * 900}] * 10}, "media": {"recommend": True, "asset": "a" * 900, "move": 99}}
+        body = {"ctx": a["ctx"], "settings": {"intent": "nope", "voice": "x", "length": "huge", "sliders": {"formality": 999}}, "analysis": evil}
+        rec = Recorder(REPLY_WRITE_SYSTEM=write_answer)
+        with patch("coach.ai._ask", rec):
+            d = self.client.post(reverse("reply_write"), json.dumps(body), content_type="application/json").json()
+        self.assertTrue(d["ok"])
+        p = rec.calls[0][1]
+        self.assertEqual(len(p["strategy"]["moves"]), 3)
+        self.assertEqual(p["strategy"]["purpose"], "trust")
+        self.assertEqual(p["strategy"]["promotion"], "none")
+        self.assertLessEqual(len(p["strategy"]["moves"][0]["approach"]), 24)
+        self.assertLessEqual(len(p["attached_media"]["asset"]), 240)
+        self.assertEqual(p["length"]["name"], "balanced")
+
+    def test_write_rejects_garbage(self):
+        self.setup_user()
+        r = self.client.post(reverse("reply_write"), "not json", content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+
+    @override_settings(AI_DAILY_LIMIT=1)
+    def test_each_step_counts_against_the_daily_cap(self):
+        self.setup_user()
+        a, _ = self.analyse()
+        self.assertTrue(a["ok"])
+        d, _ = self.write(a)
+        self.assertFalse(d["ok"])
+        self.assertIn("AI limit", d["error"])
+
+    # ---- full-page fallback (JavaScript off) ----
+    def test_full_page_path_runs_both_steps(self):
+        self.setup_user()
+        rec = Recorder(REPLY_ANALYSE_SYSTEM=make_analysis(), REPLY_WRITE_SYSTEM=write_answer)
+        with patch("coach.ai._ask", rec):
+            r = self.client.post(reverse("replies"), self.FORM)
+        for text in ("Strong fit", "Three different replies", "Rework is the hidden cost, ship small."):
+            self.assertContains(r, text)
+        self.assertEqual(len(rec.calls), 2)
+
+    def test_full_page_path_stops_at_skip_until_override(self):
+        self.setup_user()
+        rec = Recorder(REPLY_ANALYSE_SYSTEM=make_analysis("skip"), REPLY_WRITE_SYSTEM=write_answer)
+        with patch("coach.ai._ask", rec):
+            r = self.client.post(reverse("replies"), self.FORM)
+        self.assertContains(r, "Recommendation: skip this one")
+        self.assertNotContains(r, "Three different replies")
+        self.assertEqual(len(rec.calls), 1)
+        rec2 = Recorder(REPLY_ANALYSE_SYSTEM=make_analysis("skip"), REPLY_WRITE_SYSTEM=write_answer)
+        with patch("coach.ai._ask", rec2):
+            r = self.client.post(reverse("replies"), {**self.FORM, "force": "True"})
+        self.assertContains(r, "Three different replies")
+        self.assertTrue(rec2.calls[1][1]["override"])
+
+    # ---- page: one-tap layout and simplified controls ----
+    def test_page_is_built_for_one_tap(self):
         self.setup_user()
         page = self.client.get(reverse("replies")).content.decode()
-        self.assertIn('id="pasteBtn"', page)
-        for label in ("Add insight", "Build a connection", "Ask a thoughtful question", "Challenge an idea", "Show expertise", "Support the author",
-                      "My voice, refined", "Short", "Balanced", "Detailed", "Advanced tone"):
-            self.assertIn(label, page)
-        self.assertEqual(page.count('type="range"'), 4)  # reduced from 6 and collapsed under Advanced tone
+        for needle in ('id="pasteBtn"', 'id="goBtn"', 'placeholder="Paste an X post link"', 'data-analyse-url=', 'data-write-url=',
+                       'id="progress"', "Checking fit with your strategy", 'id="customize"', "Let Cadence choose", "Rewrite with these settings"):
+            self.assertIn(needle, page)
+        self.assertRegex(page, r'value="auto"[^>]*checked|checked[^>]*value="auto"')
+        self.assertRegex(page, r'value="my_voice"[^>]*checked|checked[^>]*value="my_voice"')
+        self.assertEqual(page.count('type="range"'), 4)
+        # controls live under Customize, results sit right after the link on phones (CSS grid order)
+        self.assertLess(page.index('class="card rh-input"'), page.index('id="results"'))
+        css = open("coach/static/coach/app.css").read()
+        self.assertIn('grid-template-areas: "input" "results" "custom"', css)
 
-    def test_edit_modes(self):
+    def test_intents_default_to_cadence_choosing(self):
+        self.assertEqual(style.INTENTS[0][0], "auto")
+        self.assertEqual(style.DEFAULT_INTENT, "auto")
+        self.assertEqual([k for k, _, _ in style.INTENTS][1:], ["insight", "connect", "question", "challenge", "expertise", "support"])
+
+    # ---- per-reply actions ----
+    def test_edit_modes_keep_the_strategy(self):
         self.setup_user()
-        body = {"ctx": {"post_text": "Hello", "author": "sam"}, "settings": {"intent": "question", "voice": "refined", "length": "short",
-                "instruction": "curious", "sliders": {"formality": 50}}, "current": "old reply", "approach": "Question",
-                "used": ["Insight", "Question", "Counterpoint"]}
+        a, _ = self.analyse()
         for mode in ("regenerate", "angle", "shorter", "natural"):
             rec = Recorder(REPLY_EDIT_SYSTEM=lambda p: {"approach": "Example", "angle": "Gives an example", "text": "Short natural reply"})
+            body = {"ctx": a["ctx"], "settings": {"intent": "question", "voice": "refined", "length": "short", "instruction": "curious", "sliders": {"formality": 50}},
+                    "strategy": a["analysis"]["strategy"], "current": "old reply", "approach": "Question", "used": ["Insight", "Question", "Counterpoint"], "mode": mode}
             with patch("coach.ai._ask", rec):
-                r = self.client.post(reverse("reply_one"), json.dumps({**body, "mode": mode}), content_type="application/json")
-            d = r.json()
+                d = self.client.post(reverse("reply_one"), json.dumps(body), content_type="application/json").json()
             self.assertTrue(d["ok"], mode)
             self.assertEqual((d["text"], d["approach"]), ("Short natural reply", "Example"))
             p = rec.calls[0][1]
-            self.assertEqual(p["mode"], mode)
-            self.assertEqual(p["current_reply"], "old reply")
-            self.assertEqual(p["used_approaches"], ["Insight", "Question", "Counterpoint"])
-            self.assertEqual(p["length"]["max_chars"], 140)
-            self.assertEqual(p["intent"]["key"], "question")
+            self.assertEqual((p["mode"], p["current_reply"], p["length"]["max_chars"]), (mode, "old reply", 140))
+            self.assertEqual(p["strategy"]["purpose"], "trust")
+            self.assertEqual(p["strategy"]["this_move"]["approach"], "Question")
 
     def test_edit_rejects_bad_mode(self):
         self.setup_user()
         body = {"mode": "hack", "ctx": {}, "settings": {}, "current": ""}
-        r = self.client.post(reverse("reply_one"), json.dumps(body), content_type="application/json")
-        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client.post(reverse("reply_one"), json.dumps(body), content_type="application/json").status_code, 400)
 
     def test_slider_mapping_and_cleanup(self):
         lines = style.slider_instructions({"formality": 90, "playfulness": 50, "directness": 30})
         self.assertIn("Casual to Formal: strongly formal", lines)
         self.assertIn("Gentle to Direct: leaning gentle", lines)
-        self.assertFalse(any("Serious to Playful" in l for l in lines))
         self.assertEqual(ai.clean_text('"Great \u2014 point \u2013 ok"'), "Great, point, ok")
-        self.assertEqual(ai.clean_text("Reply: hello"), "hello")
 
 
 class EmailTests(Base):

@@ -12,8 +12,8 @@ from django.conf import settings
 
 from . import prompts
 from .style import (
-    BIO_DIRECTIONS, BIO_GOAL_LABELS, BIO_ROLE_LABELS, INTENT_HELP, INTENT_LABELS, LENGTH_MAX,
-    emoji_flags, slider_instructions, voice_context,
+    BIO_DIRECTIONS, BIO_GOAL_LABELS, BIO_ROLE_LABELS, CHECKS, FIT_LABELS, INTENT_HELP, INTENT_LABELS, LENGTH_MAX,
+    PURPOSES, emoji_flags, slider_instructions, voice_context,
 )
 
 KINDS = {"post", "thread", "reply_session", "engage", "review"}
@@ -340,29 +340,20 @@ def bio_refine(profile, ctx, action, text, direction=""):
     return {"bio": bio, "why": str(raw.get("why", ""))[:200], "length": len(bio), "over": len(bio) > 160}
 
 
-# ---------- replies ----------
+# ---------- replies: fit check, strategy, writing ----------
 
-def _reply_payload(profile, ctx, settings_, stats):
-    examples = voice_examples(profile, stats)
-    length = settings_.get("length", "balanced")
+def strategy_context(profile, roadmap_ctx=None):
+    """Everything the fit gate needs to know about what this user is trying to achieve."""
     return {
-        "user": profile_context(profile),
-        "post": {
-            "author": ctx.get("author") or None,
-            "author_bio": ctx.get("author_bio") or None,
-            "text": ctx.get("post_text", ""),
-            "existing_replies": ctx.get("top_replies") or None,
-            "link": ctx.get("link") or None,
-        },
-        "intent": {
-            "key": settings_.get("intent", "insight"),
-            "label": INTENT_LABELS.get(settings_.get("intent"), "Add insight"),
-            "meaning": INTENT_HELP.get(settings_.get("intent"), ""),
-        },
-        "voice": {"mode": settings_.get("voice", "my_voice"), "examples": examples, "has_examples": bool(examples)},
-        "length": {"name": length, "max_chars": LENGTH_MAX.get(length, 220)},
-        "user_instruction": (settings_.get("instruction") or "").strip() or None,
-        "tone_adjustments": slider_instructions(settings_.get("sliders") or {}) or None,
+        "account_type": voice_context(profile)["account_type"],
+        "niche": profile.niche,
+        "audience": profile.audience,
+        "goal": profile.get_goal_display(),
+        "offer": profile.offer or None,
+        "success_looks_like": profile.target_note or None,
+        "followers_now": profile.current_followers,
+        "followers_target": profile.target_followers,
+        "roadmap_today": roadmap_ctx,
     }
 
 
@@ -370,49 +361,190 @@ def _norm_list(v, n=4, width=200):
     return [str(x)[:width] for x in (v or []) if str(x).strip()][:n] if isinstance(v, list) else []
 
 
-def reply_session(profile, ctx, settings_, stats=None, force=False):
-    """Read the post and conversation, then write 3 different replies (or say there is nothing to add)."""
-    sliders = settings_.get("sliders") or {}
-    flags = emoji_flags(profile.account_type, 3, strength=sliders.get("emoji", 50))
-    payload = _reply_payload(profile, ctx, settings_, stats)
-    payload.update(
-        force=bool(force),
-        emoji_allowed=flags,
-        emoji_max_per_reply=voice_context(profile)["emoji_max_per_item"],
-    )
-    raw = _ask(prompts.REPLY_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=2000)
-    rd = raw.get("read") if isinstance(raw.get("read"), dict) else {}
+def _dict(v):
+    return v if isinstance(v, dict) else {}
+
+
+def norm_analysis(raw):
+    """Clean an analysis from the model OR from the browser. Never trusts shape or size."""
+    raw = _dict(raw)
+    rd = _dict(raw.get("read"))
     read = {
         "topic": str(rd.get("topic", ""))[:200], "intent": str(rd.get("intent", ""))[:200],
         "argument": str(rd.get("argument", ""))[:300], "context": str(rd.get("context", ""))[:300],
         "repeated_points": _norm_list(rd.get("repeated_points")), "gaps": _norm_list(rd.get("gaps")),
-        "obvious_point_taken": bool(rd.get("obvious_point_taken")),
-        "suggested_angle": str(rd.get("suggested_angle", ""))[:300],
-        "has_replies": bool(ctx.get("top_replies")),
+        "obvious_point_taken": bool(rd.get("obvious_point_taken")), "has_replies": bool(rd.get("has_replies")),
     }
-    max_chars = payload["length"]["max_chars"]
-    replies = []
-    for r in (raw.get("replies") or [])[:3]:
-        if isinstance(r, dict) and r.get("text"):
-            text = clean_text(r["text"])[:320]
-            replies.append({"approach": str(r.get("approach", "Insight"))[:24], "angle": str(r.get("angle", ""))[:160],
-                            "text": text, "length": len(text), "over": len(text) > 280, "max": max_chars})
-    worth = raw.get("worth_replying", True) is not False
-    if not worth and not force:
-        return {"read": read, "worth": False, "skip_reason": str(raw.get("skip_reason", ""))[:400], "replies": [], "tip": ""}
+    fit = _dict(raw.get("fit"))
+    verdict = fit.get("verdict") if fit.get("verdict") in FIT_LABELS else "partial"
+    checks = _dict(fit.get("checks"))
+    rows = []
+    for key, label in CHECKS:
+        c = _dict(checks.get(key))
+        state = c.get("state") if c.get("state") in ("yes", "partial", "no") else "partial"
+        rows.append({"key": key, "label": label, "state": state, "note": str(c.get("note", ""))[:220]})
+    st = _dict(raw.get("strategy"))
+    purpose = st.get("purpose") if st.get("purpose") in PURPOSES else "trust"
+    moves = []
+    for m in (st.get("moves") or [])[:3] if isinstance(st.get("moves"), list) else []:
+        if isinstance(m, dict):
+            moves.append({"approach": str(m.get("approach", "Insight"))[:24], "angle": str(m.get("angle", ""))[:200],
+                          "point": str(m.get("point", ""))[:300]})
+    md = _dict(raw.get("media"))
+    asset = str(md.get("asset", ""))[:240].strip()
+    try:
+        move_no = max(1, min(3, int(md.get("move", 1))))
+    except (TypeError, ValueError):
+        move_no = 1
+    media = {"recommend": bool(md.get("recommend")) and bool(asset) and verdict != "skip", "asset": asset,
+             "why": str(md.get("why", ""))[:240], "move": move_no}
+    if verdict == "skip":
+        moves = []
+    return {
+        "read": read,
+        "fit": {"verdict": verdict, "label": FIT_LABELS[verdict], "summary": str(fit.get("summary", ""))[:300], "rows": rows},
+        "recommendation": str(raw.get("recommendation", ""))[:500],
+        "strategy": {"purpose": purpose, "purpose_label": PURPOSES[purpose], "why": str(st.get("why", ""))[:300],
+                     "promotion": "light" if st.get("promotion") == "light" else "none", "moves": moves},
+        "media": media,
+    }
+
+
+def _post_block(ctx):
+    return {
+        "author": ctx.get("author") or None,
+        "author_bio": ctx.get("author_bio") or None,
+        "text": ctx.get("post_text", ""),
+        "existing_replies": ctx.get("top_replies") or None,
+        "link": ctx.get("link") or None,
+    }
+
+
+def _intent_block(settings_):
+    key = settings_.get("intent", "auto")
+    return {"key": key, "label": INTENT_LABELS.get(key, "Let Cadence choose"), "meaning": INTENT_HELP.get(key, "")}
+
+
+def reply_analyse(profile, ctx, settings_, stats=None, roadmap_ctx=None):
+    """Read the post, run the fit gate against the user's strategy, plan three different moves."""
+    payload = {
+        "strategy": strategy_context(profile, roadmap_ctx),
+        "post": _post_block(ctx),
+        "intent": _intent_block(settings_),
+        "what_works_for_user": ((stats or {}).get("takeaways") or [])[:4] or None,
+    }
+    raw = _ask(prompts.REPLY_ANALYSE_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=1800)
+    an = norm_analysis(raw)
+    an["read"]["has_replies"] = bool(ctx.get("top_replies"))
+    if an["fit"]["verdict"] != "skip" and len(an["strategy"]["moves"]) < 3:
+        raise AIError("The strategy came back incomplete. Run it again.")
+    return an
+
+
+_SIM_STOP = set("this that with have from your they their there what when which would about could should been were will just like more some than then them into also very much".split())
+
+
+def _words(text):
+    return {w for w in re.findall(r"[a-z']{4,}", text.lower()) if w not in _SIM_STOP}
+
+
+def too_similar(replies, threshold=0.5):
+    sets = [_words(r["text"]) for r in replies]
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            a, b = sets[i], sets[j]
+            if a and b and len(a & b) / len(a | b) >= threshold:
+                return True
+    return False
+
+
+def _fallback_moves():
+    return [
+        {"approach": "Question", "angle": "Asks one genuine question", "point": "A specific question about something they said"},
+        {"approach": "Support", "angle": "Backs one concrete detail", "point": "Name the one detail that stood out and why"},
+        {"approach": "Example", "angle": "Adds one real observation", "point": "A short observation from real experience [your real example]"},
+    ]
+
+
+def reply_write(profile, ctx, settings_, analysis, stats=None, override=False):
+    """Write three replies that carry out the strategy. Returns {"replies", "tip", "analysis"}."""
+    an = norm_analysis(analysis)
+    if not an["strategy"]["moves"]:
+        if not override:
+            raise AIError("There is no strategy to write from. Run the fit check again.")
+        an["strategy"].update(purpose="relationship", purpose_label=PURPOSES["relationship"], promotion="none", moves=_fallback_moves())
+        an["media"]["recommend"] = False
+    sliders = settings_.get("sliders") or {}
+    flags = emoji_flags(profile.account_type, 3, strength=sliders.get("emoji", 50))
+    length = settings_.get("length", "balanced")
+    max_chars = LENGTH_MAX.get(length, 220)
+    examples = voice_examples(profile, stats)
+    media = an["media"]
+    payload = {
+        "user": {"voice": voice_context(profile), "offer": profile.offer or None},
+        "post": _post_block(ctx),
+        "strategy": {"purpose": an["strategy"]["purpose"], "why": an["strategy"]["why"],
+                     "promotion": an["strategy"]["promotion"], "moves": an["strategy"]["moves"]},
+        "attached_media": {"move": media["move"], "asset": media["asset"]} if media["recommend"] else None,
+        "voice": {"mode": settings_.get("voice", "my_voice"), "examples": examples, "has_examples": bool(examples)},
+        "length": {"name": length, "max_chars": max_chars},
+        "user_instruction": (settings_.get("instruction") or "").strip() or None,
+        "tone_adjustments": slider_instructions(sliders) or None,
+        "emoji_allowed": flags,
+        "emoji_max_per_reply": voice_context(profile)["emoji_max_per_item"],
+        "override": bool(override),
+    }
+
+    def run(extra=None):
+        data = dict(payload, **(extra or {}))
+        raw = _ask(prompts.REPLY_WRITE_SYSTEM, json.dumps(data, ensure_ascii=False), max_tokens=1400)
+        out = []
+        for i, r in enumerate((raw.get("replies") or [])[:3]):
+            if isinstance(r, dict) and r.get("text"):
+                mv = an["strategy"]["moves"][i] if i < len(an["strategy"]["moves"]) else {}
+                text = clean_text(r["text"])[:320]
+                out.append({"approach": str(r.get("approach") or mv.get("approach") or "Insight")[:24],
+                            "angle": str(r.get("angle") or mv.get("angle") or "")[:160], "text": text,
+                            "length": len(text), "over": len(text) > 280, "max": max_chars, "media": None})
+        return out, str(raw.get("tip", ""))[:240]
+
+    replies, tip = run()
+    if replies and too_similar(replies):  # genuinely different, not three paraphrases: one corrective retry
+        again, tip2 = run({"fix": "Your previous replies were too similar. Make each one carry out its own move with a different point and different wording."})
+        if again:
+            replies, tip = again, tip2
     if not replies:
         raise AIError("The model returned no replies. Run it again.")
-    return {"read": read, "worth": True, "skip_reason": "", "replies": replies, "tip": str(raw.get("tip", ""))[:240]}
+    if media["recommend"] and 1 <= media["move"] <= len(replies):
+        replies[media["move"] - 1]["media"] = {"asset": media["asset"], "why": media["why"]}
+    return {"replies": replies, "tip": tip, "analysis": an}
+
+
+def _reply_payload(profile, ctx, settings_, stats, strategy=None, approach=""):
+    examples = voice_examples(profile, stats)
+    length = settings_.get("length", "balanced")
+    move = next((m for m in (strategy or {}).get("moves", []) if m["approach"] == approach), None)
+    return {
+        "user": {"voice": voice_context(profile), "offer": profile.offer or None},
+        "post": _post_block(ctx),
+        "intent": _intent_block(settings_),
+        "strategy": ({"purpose": strategy["purpose"], "promotion": strategy["promotion"], "this_move": move} if strategy else None),
+        "voice": {"mode": settings_.get("voice", "my_voice"), "examples": examples, "has_examples": bool(examples)},
+        "length": {"name": length, "max_chars": LENGTH_MAX.get(length, 220)},
+        "user_instruction": (settings_.get("instruction") or "").strip() or None,
+        "tone_adjustments": slider_instructions(settings_.get("sliders") or {}) or None,
+    }
 
 
 REPLY_MODES = {"regenerate", "angle", "shorter", "natural"}
 
 
-def reply_edit(profile, ctx, settings_, mode, current, approach="", used=None, stats=None):
+def reply_edit(profile, ctx, settings_, mode, current, approach="", used=None, stats=None, strategy=None):
     """Rework one reply. Returns {"approach", "angle", "text", "length", "over"}."""
     sliders = settings_.get("sliders") or {}
     flags = emoji_flags(profile.account_type, 1, strength=sliders.get("emoji", 50))
-    payload = _reply_payload(profile, ctx, settings_, stats)
+    strat = norm_analysis({"strategy": strategy})["strategy"] if strategy else None
+    payload = _reply_payload(profile, ctx, settings_, stats, strat, approach)
     payload.update(
         mode=mode, current_reply=current, approach=approach or None, used_approaches=used or [],
         emoji_allowed=flags[0], emoji_max_per_reply=voice_context(profile)["emoji_max_per_item"],
