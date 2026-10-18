@@ -8,6 +8,25 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'coach/app.css' %}?v={{ ASSET_V }}">
+
+  <link rel="icon" href="{% static 'coach/img/favicon.ico' %}" sizes="48x48">
+  <link rel="icon" href="{% static 'coach/img/favicon.svg' %}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{% static 'coach/img/apple-touch-icon.png' %}">
+  <meta name="theme-color" content="#0e1217">
+  
+  <meta name="description" content="Cadence turns your goal into a 30 or 60 day roadmap and a daily checklist for X.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Cadence">
+  <meta property="og:title" content="Cadence: know exactly what to post on X">
+  <meta property="og:description" content="A daily checklist of posts, replies and timing, built from your goal.">
+  <meta property="og:url" content="{{ request.build_absolute_uri }}">
+  <meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'coach/img/og-image.png' %}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Cadence: know exactly what to post on X">
+  <meta name="twitter:description" content="A daily checklist of posts, replies and timing, built from your goal.">
+  <meta name="twitter:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'coach/img/og-image.png' %}">
 </head>
 <body>
 <div class="shell">
